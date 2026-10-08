@@ -7,6 +7,14 @@
 [![OpenAI](https://img.shields.io/badge/OpenAI-integrated-00a67e)](https://openai.com/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
+## 🌐 Live Demos
+
+| Project | Description | Live Demo |
+|---------|-------------|-----------|
+| **Excel Automation** | Clean/dedupe/transform spreadsheet data | **[Try it →](LIVE_DEMO_URL_EXCEL)** |
+| **PDF Document AI** | Extract contract data from PDFs | **[Try it →](LIVE_DEMO_URL_PDF)** |
+| **OpenAI API Automation** | Inquiry processing with AI categorization | **[Try it →](LIVE_DEMO_URL_API)** |
+
 ---
 
 ## 👋 About This Portfolio
