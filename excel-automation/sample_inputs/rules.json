@@ -1,0 +1,16 @@
+{
+  "dedupe_columns": [
+    "email"
+  ],
+  "transformations": {
+    "name": "title",
+    "email": "lowercase",
+    "country": "uppercase"
+  },
+  "filters": {
+    "age": {
+      "min_value": 18,
+      "max_value": 100
+    }
+  }
+}
