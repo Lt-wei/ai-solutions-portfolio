@@ -27,9 +27,10 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="PDF Document AI API", version="1.0.0")
 
-# Create directories
-UPLOAD_DIR = Path("uploads")
-OUTPUT_DIR = Path("outputs")
+# Create directories (use /tmp for serverless)
+TEMP_BASE = Path("/tmp") if Path("/tmp").exists() else Path(".")
+UPLOAD_DIR = TEMP_BASE / "uploads"
+OUTPUT_DIR = TEMP_BASE / "outputs"
 UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
 
@@ -253,15 +254,25 @@ async def root():
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
                 background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
                 min-height: 100vh;
-                padding: 20px;
+                display: flex;
+                flex-direction: column;
             }}
+            .banner {{
+                background: #1a202c;
+                color: white;
+                padding: 12px 20px;
+                text-align: center;
+                font-size: 14px;
+            }}
+            .banner strong {{ color: #fbbf24; }}
             .container {{
                 max-width: 900px;
-                margin: 0 auto;
+                margin: 20px auto;
                 background: white;
                 border-radius: 16px;
                 padding: 40px;
                 box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                flex: 1;
             }}
             h1 {{
                 color: #2d3748;
@@ -307,6 +318,12 @@ async def root():
                 margin: 15px 0;
                 padding: 10px;
             }}
+            .button-group {{
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+                margin-top: 20px;
+            }}
             button {{
                 background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
                 color: white;
@@ -317,7 +334,6 @@ async def root():
                 font-weight: 600;
                 cursor: pointer;
                 transition: transform 0.2s, box-shadow 0.2s;
-                width: 100%;
             }}
             button:hover {{
                 transform: translateY(-2px);
@@ -327,6 +343,30 @@ async def root():
                 opacity: 0.6;
                 cursor: not-allowed;
                 transform: none;
+            }}
+            .btn-sample {{
+                background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            }}
+            .footer {{
+                background: rgba(0,0,0,0.1);
+                color: white;
+                text-align: center;
+                padding: 20px;
+                margin-top: auto;
+            }}
+            .footer a {{
+                color: white;
+                text-decoration: none;
+                font-weight: 600;
+                border-bottom: 2px solid rgba(255,255,255,0.3);
+            }}
+            .footer a:hover {{
+                border-bottom-color: white;
+            }}
+            .file-size-note {{
+                font-size: 12px;
+                color: #718096;
+                margin-top: 5px;
             }}
             #result {{
                 margin-top: 30px;
@@ -397,6 +437,10 @@ async def root():
         </style>
     </head>
     <body>
+        <div class="banner">
+            <strong>PDF Document AI Demo</strong> — Extract structured contract data from PDFs with AI + regex fallback{''' • Demo mode – AI responses are simulated using heuristic patterns''' if not OPENAI_AVAILABLE else ''}
+        </div>
+        
         <div class="container">
             <h1>📄 PDF Document AI</h1>
             <p class="subtitle">AI-powered contract data extraction to structured Excel</p>
@@ -409,7 +453,7 @@ async def root():
             
             {'''<div class="sample-files">
                 <strong>💡 Demo Mode:</strong> No OpenAI API key detected. Using intelligent regex/heuristic extraction. 
-                Add OPENAI_API_KEY to .env for AI-powered extraction with higher accuracy.
+                Add OPENAI_API_KEY environment variable for AI-powered extraction with higher accuracy.
             </div>''' if not OPENAI_AVAILABLE else ''}
             
             <form id="uploadForm" enctype="multipart/form-data">
@@ -417,13 +461,14 @@ async def root():
                     <label style="font-weight: 600; color: #2d3748; display: block; margin-bottom: 10px;">
                         📎 Upload PDF Files (single or multiple)
                     </label>
-                    <input type="file" name="files" id="fileInput" accept=".pdf" multiple required>
-                    <p style="color: #718096; font-size: 13px; margin-top: 10px;">
-                        Sample PDFs are provided in the sample_pdfs/ directory
-                    </p>
+                    <input type="file" name="files" id="fileInput" accept=".pdf" multiple>
+                    <div class="file-size-note">Maximum file size per PDF: 10MB</div>
                 </div>
                 
-                <button type="submit" id="submitBtn">Extract Contract Data</button>
+                <div class="button-group">
+                    <button type="submit" id="submitBtn">Extract from Uploaded PDFs</button>
+                    <button type="button" class="btn-sample" id="sampleBtn" onclick="processSample()">🎯 Try with Sample Contracts</button>
+                </div>
             </form>
             
             <div class="loader" id="loader"></div>
@@ -431,20 +476,39 @@ async def root():
             <div id="result"></div>
         </div>
         
+        <div class="footer">
+            View source code on <a href="https://github.com/Lt-wei/ai-solutions-portfolio" target="_blank">GitHub</a>
+        </div>
+        
         <script>
             document.getElementById('uploadForm').addEventListener('submit', async (e) => {{
                 e.preventDefault();
                 
+                const fileInput = document.getElementById('fileInput');
+                if (!fileInput.files.length) {{
+                    alert('Please select at least one PDF file');
+                    return;
+                }}
+                
+                // Check file sizes (10MB limit per file)
+                for (let file of fileInput.files) {{
+                    if (file.size > 10 * 1024 * 1024) {{
+                        alert(`File ${{file.name}} exceeds 10MB limit`);
+                        return;
+                    }}
+                }}
+                
                 const submitBtn = document.getElementById('submitBtn');
+                const sampleBtn = document.getElementById('sampleBtn');
                 const loader = document.getElementById('loader');
                 const resultDiv = document.getElementById('result');
                 
                 submitBtn.disabled = true;
+                sampleBtn.disabled = true;
                 loader.style.display = 'block';
                 resultDiv.style.display = 'none';
                 
                 const formData = new FormData();
-                const fileInput = document.getElementById('fileInput');
                 
                 for (let file of fileInput.files) {{
                     formData.append('files', file);
@@ -512,8 +576,82 @@ async def root():
                 
                 resultDiv.style.display = 'block';
                 submitBtn.disabled = false;
+                sampleBtn.disabled = false;
                 loader.style.display = 'none';
             }});
+            
+            async function processSample() {{
+                const submitBtn = document.getElementById('submitBtn');
+                const sampleBtn = document.getElementById('sampleBtn');
+                const loader = document.getElementById('loader');
+                const resultDiv = document.getElementById('result');
+                
+                submitBtn.disabled = true;
+                sampleBtn.disabled = true;
+                loader.style.display = 'block';
+                resultDiv.style.display = 'none';
+                
+                try {{
+                    const response = await fetch('/sample');
+                    const data = await response.json();
+                    
+                    if (response.ok) {{
+                        resultDiv.className = 'success';
+                        
+                        let tableRows = data.contracts.map(c => `
+                            <tr>
+                                <td>${{c.contract_no}}</td>
+                                <td>${{c.company}}</td>
+                                <td>${{c.party_a}}</td>
+                                <td>${{c.party_b}}</td>
+                                <td>$$${{c.amount.toLocaleString()}}</td>
+                                <td>${{c.date}}</td>
+                                <td>${{(c.confidence * 100).toFixed(0)}}%</td>
+                            </tr>
+                        `).join('');
+                        
+                        resultDiv.innerHTML = `
+                            <h3 style="color: #38a169; margin-bottom: 15px;">✅ Sample Processing Complete!</h3>
+                            <p><strong>Sample files processed:</strong> ${{data.total_files}}</p>
+                            <p><strong>Contracts extracted:</strong> ${{data.contracts.length}}</p>
+                            <p><strong>Method:</strong> ${{data.contracts[0]?.extraction_method || 'N/A'}}</p>
+                            <p><strong>Processing time:</strong> ${{data.processing_time.toFixed(2)}}s</p>
+                            
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Contract No</th>
+                                        <th>Company</th>
+                                        <th>Party A</th>
+                                        <th>Party B</th>
+                                        <th>Amount</th>
+                                        <th>Date</th>
+                                        <th>Confidence</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${{tableRows}}
+                                </tbody>
+                            </table>
+                            
+                            <a href="/download/${{data.output_file}}" class="download-link" download>📥 Download Excel File</a>
+                        `;
+                    }} else {{
+                        throw new Error(data.detail || 'Sample processing failed');
+                    }}
+                }} catch (error) {{
+                    resultDiv.className = 'error';
+                    resultDiv.innerHTML = `
+                        <h3 style="color: #e53e3e; margin-bottom: 10px;">❌ Error</h3>
+                        <p>${{error.message}}</p>
+                    `;
+                }}
+                
+                resultDiv.style.display = 'block';
+                submitBtn.disabled = false;
+                sampleBtn.disabled = false;
+                loader.style.display = 'none';
+            }}
         </script>
     </body>
     </html>
@@ -592,6 +730,71 @@ async def extract_contracts(files: List[UploadFile] = File(...)):
     except Exception as e:
         logger.error(f"Extraction error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Extraction failed: {str(e)}")
+
+
+@app.get("/sample")
+async def extract_sample_contracts():
+    """Process sample contract PDFs for demo purposes"""
+    import time
+    start_time = time.time()
+    
+    try:
+        sample_dir = Path(__file__).parent / "sample_pdfs"
+        if not sample_dir.exists():
+            raise HTTPException(status_code=500, detail="Sample PDF files not found")
+        
+        # Get all sample PDFs
+        sample_files = list(sample_dir.glob("*.pdf"))
+        if not sample_files:
+            raise HTTPException(status_code=500, detail="No sample PDF files found")
+        
+        logger.info(f"Processing {len(sample_files)} sample PDF file(s)")
+        
+        processor = PDFProcessor()
+        contracts = []
+        
+        # Process each sample PDF
+        for pdf_path in sample_files:
+            try:
+                contract = processor.process_pdf(pdf_path)
+                contracts.append(contract.model_dump())
+            except Exception as e:
+                logger.error(f"Failed to process {pdf_path.name}: {e}")
+                contracts.append({
+                    "contract_no": "ERROR",
+                    "company": f"Failed: {pdf_path.name}",
+                    "amount": 0.0,
+                    "date": "",
+                    "party_a": str(e)[:50],
+                    "party_b": "",
+                    "confidence": 0.0,
+                    "extraction_method": "error"
+                })
+        
+        # Create Excel output
+        df = pd.DataFrame(contracts)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_filename = f"contracts_sample_{timestamp}.xlsx"
+        output_path = OUTPUT_DIR / output_filename
+        
+        df.to_excel(output_path, index=False, engine='openpyxl')
+        
+        processing_time = time.time() - start_time
+        
+        logger.info(f"Sample extraction complete: {len(contracts)} contracts in {processing_time:.2f}s")
+        
+        return {
+            "status": "success",
+            "total_files": len(sample_files),
+            "contracts": contracts,
+            "output_file": output_filename,
+            "processing_time": processing_time,
+            "extraction_stats": processor.extraction_stats
+        }
+        
+    except Exception as e:
+        logger.error(f"Sample extraction error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Sample extraction failed: {str(e)}")
 
 
 @app.get("/download/{filename}")

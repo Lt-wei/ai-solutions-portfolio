@@ -12,6 +12,7 @@ from typing import Optional, List
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, Boolean
 from sqlalchemy.ext.declarative import declarative_base
@@ -28,8 +29,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Database setup
-DATABASE_URL = "sqlite:///./inquiries.db"
+# Database setup (use /tmp for serverless)
+from pathlib import Path
+TEMP_BASE = Path("/tmp") if Path("/tmp").exists() else Path(".")
+DB_PATH = TEMP_BASE / "inquiries.db"
+DATABASE_URL = f"sqlite:///{DB_PATH}"
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -292,8 +296,6 @@ app = FastAPI(
 @app.get("/", response_class=HTMLResponse)
 async def root():
     """Serve web UI"""
-    from fastapi.responses import HTMLResponse
-    
     ai_badge = "🟢 AI Active" if OPENAI_AVAILABLE else "🟡 Demo Mode"
     ai_color = "#c6f6d5" if OPENAI_AVAILABLE else "#fef3c7"
     ai_text_color = "#22543d" if OPENAI_AVAILABLE else "#78350f"
@@ -309,15 +311,41 @@ async def root():
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 min-height: 100vh;
-                padding: 20px;
+                display: flex;
+                flex-direction: column;
             }}
+            .banner {{
+                background: #1a202c;
+                color: white;
+                padding: 12px 20px;
+                text-align: center;
+                font-size: 14px;
+            }}
+            .banner strong {{ color: #fbbf24; }}
             .container {{
                 max-width: 900px;
-                margin: 0 auto;
+                margin: 20px auto;
                 background: white;
                 border-radius: 16px;
                 padding: 40px;
                 box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                flex: 1;
+            }}
+            .footer {{
+                background: rgba(0,0,0,0.1);
+                color: white;
+                text-align: center;
+                padding: 20px;
+                margin-top: auto;
+            }}
+            .footer a {{
+                color: white;
+                text-decoration: none;
+                font-weight: 600;
+                border-bottom: 2px solid rgba(255,255,255,0.3);
+            }}
+            .footer a:hover {{
+                border-bottom-color: white;
             }}
             h1 {{
                 color: #2d3748;
@@ -452,6 +480,10 @@ async def root():
         </style>
     </head>
     <body>
+        <div class="banner">
+            <strong>Inquiry Automation Demo</strong> — AI-powered categorization, priority assignment, and automated responses{''' • Demo mode – AI responses are simulated using rule-based logic''' if not OPENAI_AVAILABLE else ''}
+        </div>
+        
         <div class="container">
             <h1>🤖 Inquiry Automation System</h1>
             <p class="subtitle">AI-powered inquiry processing with intelligent categorization and response</p>
@@ -465,11 +497,10 @@ async def root():
             
             <form id="inquiryForm">
                 <div class="form-group">
-                    <label>📝 Your Inquiry *</label>
+                    <label>📝 Your Inquiry</label>
                     <textarea 
                         id="inquiryText" 
                         placeholder="Describe your question, issue, or request here..."
-                        required
                     ></textarea>
                 </div>
                 
@@ -483,7 +514,10 @@ async def root():
                     <input type="email" id="userEmail" placeholder="john@example.com">
                 </div>
                 
-                <button type="submit" id="submitBtn">Submit Inquiry</button>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <button type="submit" id="submitBtn">Submit Custom Inquiry</button>
+                    <button type="button" onclick="loadSampleInquiry()" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">🎯 Try Sample Inquiry</button>
+                </div>
             </form>
             
             <div class="loader" id="loader"></div>
@@ -493,6 +527,10 @@ async def root():
             <div style="text-align: center; margin-top: 30px;">
                 <a href="/stats" class="stats-link">📊 View All Inquiries</a>
             </div>
+        </div>
+        
+        <div class="footer">
+            View source code on <a href="https://github.com/Lt-wei/ai-solutions-portfolio" target="_blank">GitHub</a>
         </div>
         
         <script>
@@ -579,6 +617,74 @@ async def root():
                 submitBtn.disabled = false;
                 loader.style.display = 'none';
             }});
+            
+            async function loadSampleInquiry() {{
+                const submitBtn = document.getElementById('submitBtn');
+                const loader = document.getElementById('loader');
+                const resultDiv = document.getElementById('result');
+                
+                submitBtn.disabled = true;
+                loader.style.display = 'block';
+                resultDiv.style.display = 'none';
+                
+                try {{
+                    const response = await fetch('/sample');
+                    const data = await response.json();
+                    
+                    if (response.ok) {{
+                        resultDiv.className = 'success';
+                        resultDiv.innerHTML = `
+                            <h3 style="color: #38a169; margin-bottom: 15px;">✅ Sample Inquiry Processed!</h3>
+                            
+                            <div class="result-field">
+                                <div class="result-label">Inquiry ID</div>
+                                <div class="result-value">#${{data.id}}</div>
+                            </div>
+                            
+                            <div class="result-field">
+                                <div class="result-label">Category</div>
+                                <div class="result-value">${{data.category.toUpperCase()}}</div>
+                            </div>
+                            
+                            <div class="result-field">
+                                <div class="result-label">Priority</div>
+                                <div class="result-value">${{data.priority.toUpperCase()}}</div>
+                            </div>
+                            
+                            <div class="result-field">
+                                <div class="result-label">Sentiment</div>
+                                <div class="result-value">${{data.sentiment.toUpperCase()}}</div>
+                            </div>
+                            
+                            <div class="result-field">
+                                <div class="result-label">AI Response</div>
+                                <div class="result-value">${{data.ai_response}}</div>
+                            </div>
+                            
+                            <div class="result-field">
+                                <div class="result-label">Confidence Score</div>
+                                <div class="result-value">${{(data.confidence_score * 100).toFixed(0)}}%</div>
+                            </div>
+                            
+                            <p style="margin-top: 15px; color: #4a5568; font-size: 14px;">
+                                Processing method: ${{data.processing_method}}
+                            </p>
+                        `;
+                    }} else {{
+                        throw new Error(data.detail || 'Sample processing failed');
+                    }}
+                }} catch (error) {{
+                    resultDiv.className = 'error';
+                    resultDiv.innerHTML = `
+                        <h3 style="color: #e53e3e; margin-bottom: 10px;">❌ Error</h3>
+                        <p>${{error.message}}</p>
+                    `;
+                }}
+                
+                resultDiv.style.display = 'block';
+                submitBtn.disabled = false;
+                loader.style.display = 'none';
+            }}
         </script>
     </body>
     </html>
@@ -662,6 +768,104 @@ async def submit_inquiry(
     except Exception as e:
         logger.error(f"Error processing inquiry: {e}")
         raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
+    finally:
+        db.close()
+
+
+@app.get("/sample")
+async def submit_sample_inquiry(background_tasks: BackgroundTasks):
+    """Submit a sample inquiry for demo purposes"""
+    db = SessionLocal()
+    
+    # Sample inquiry text
+    sample_text = """I would like to inquire about your Enterprise plan features and pricing. 
+    Our company has been growing rapidly and we're evaluating different solutions for our team of 50+ employees.
+    We're particularly interested in:
+    1. Advanced security features and compliance certifications
+    2. API access for integrations with our existing tools
+    3. Volume discounts and flexible payment terms
+    4. Dedicated support and onboarding assistance
+    
+    Could you provide detailed information about the Enterprise plan, including pricing for our team size?
+    We're looking to make a decision within the next 2 weeks.
+    
+    Thank you!"""
+    
+    try:
+        # Process sample inquiry
+        processor = InquiryProcessor()
+        inquiry_hash = processor.compute_hash(sample_text)
+        
+        # Check for duplicates
+        existing = db.query(Inquiry).filter(Inquiry.inquiry_hash == inquiry_hash).first()
+        if existing:
+            # Return existing result
+            logger.info(f"Sample inquiry already exists (ID: {existing.id})")
+            return InquiryResponse(
+                id=existing.id,
+                category=existing.category,
+                priority=existing.priority,
+                sentiment=existing.sentiment,
+                ai_response=existing.ai_response,
+                confidence_score=existing.confidence_score,
+                processing_method=existing.processing_method,
+                status=existing.status,
+                notification_sent=existing.notification_sent,
+                created_at=existing.created_at
+            )
+        
+        logger.info("Processing sample inquiry...")
+        processing_result = processor.process_inquiry(sample_text)
+        
+        # Save to database
+        inquiry = Inquiry(
+            inquiry_text=sample_text,
+            inquiry_hash=inquiry_hash,
+            category=processing_result["category"],
+            priority=processing_result["priority"],
+            sentiment=processing_result["sentiment"],
+            ai_response=processing_result["ai_response"],
+            confidence_score=processing_result["confidence_score"],
+            processing_method=processing_result["processing_method"],
+            status="processed"
+        )
+        
+        db.add(inquiry)
+        db.commit()
+        db.refresh(inquiry)
+        
+        logger.info(f"✅ Sample inquiry saved with ID: {inquiry.id}")
+        
+        # Schedule notifications in background
+        inquiry_dict = {
+            "id": inquiry.id,
+            "category": inquiry.category,
+            "priority": inquiry.priority,
+            "sentiment": inquiry.sentiment
+        }
+        
+        background_tasks.add_task(
+            NotificationService.notify_inquiry,
+            inquiry_dict,
+            "demo@example.com"
+        )
+        
+        return InquiryResponse(
+            id=inquiry.id,
+            category=inquiry.category,
+            priority=inquiry.priority,
+            sentiment=inquiry.sentiment,
+            ai_response=inquiry.ai_response,
+            confidence_score=inquiry.confidence_score,
+            processing_method=inquiry.processing_method,
+            status=inquiry.status,
+            notification_sent=True,
+            created_at=inquiry.created_at
+        )
+        
+    except Exception as e:
+        logger.error(f"Error processing sample inquiry: {e}")
+        raise HTTPException(status_code=500, detail=f"Sample processing failed: {str(e)}")
     finally:
         db.close()
 

@@ -21,9 +21,10 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Excel Automation API", version="1.0.0")
 
-# Create necessary directories
-UPLOAD_DIR = Path("uploads")
-OUTPUT_DIR = Path("outputs")
+# Create necessary directories (use /tmp for serverless)
+TEMP_BASE = Path("/tmp") if Path("/tmp").exists() else Path(".")
+UPLOAD_DIR = TEMP_BASE / "uploads"
+OUTPUT_DIR = TEMP_BASE / "outputs"
 UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
 
@@ -152,15 +153,25 @@ async def root():
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 min-height: 100vh;
-                padding: 20px;
+                display: flex;
+                flex-direction: column;
             }
+            .banner {
+                background: #1a202c;
+                color: white;
+                padding: 12px 20px;
+                text-align: center;
+                font-size: 14px;
+            }
+            .banner strong { color: #fbbf24; }
             .container {
                 max-width: 800px;
-                margin: 0 auto;
+                margin: 20px auto;
                 background: white;
                 border-radius: 16px;
                 padding: 40px;
                 box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                flex: 1;
             }
             h1 {
                 color: #2d3748;
@@ -199,6 +210,12 @@ async def root():
                 margin-bottom: 20px;
                 resize: vertical;
             }
+            .button-group {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+                margin-top: 20px;
+            }
             button {
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 color: white;
@@ -209,7 +226,6 @@ async def root():
                 font-weight: 600;
                 cursor: pointer;
                 transition: transform 0.2s, box-shadow 0.2s;
-                width: 100%;
             }
             button:hover {
                 transform: translateY(-2px);
@@ -219,6 +235,30 @@ async def root():
                 opacity: 0.6;
                 cursor: not-allowed;
                 transform: none;
+            }
+            .btn-sample {
+                background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            }
+            .footer {
+                background: rgba(0,0,0,0.1);
+                color: white;
+                text-align: center;
+                padding: 20px;
+                margin-top: auto;
+            }
+            .footer a {
+                color: white;
+                text-decoration: none;
+                font-weight: 600;
+                border-bottom: 2px solid rgba(255,255,255,0.3);
+            }
+            .footer a:hover {
+                border-bottom-color: white;
+            }
+            .file-size-note {
+                font-size: 12px;
+                color: #718096;
+                margin-top: 5px;
             }
             #result {
                 margin-top: 30px;
@@ -282,6 +322,10 @@ async def root():
         </style>
     </head>
     <body>
+        <div class="banner">
+            <strong>Excel Data Processing Demo</strong> — Automated cleaning, deduplication, transformation with configurable rules
+        </div>
+        
         <div class="container">
             <h1>📊 Excel Data Processing</h1>
             <p class="subtitle">Automated cleaning, deduplication, and transformation pipeline</p>
@@ -293,9 +337,10 @@ async def root():
             <form id="uploadForm" enctype="multipart/form-data">
                 <div class="upload-section">
                     <label style="font-weight: 600; color: #2d3748; display: block; margin-bottom: 10px;">
-                        📁 Upload Excel/CSV File *
+                        📁 Upload Excel/CSV File
                     </label>
-                    <input type="file" name="file" id="fileInput" accept=".xlsx,.xls,.csv" required>
+                    <input type="file" name="file" id="fileInput" accept=".xlsx,.xls,.csv">
+                    <div class="file-size-note">Maximum file size: 10MB</div>
                 </div>
                 
                 <label style="font-weight: 600; color: #2d3748; display: block; margin-bottom: 10px;">
@@ -312,7 +357,10 @@ async def root():
   }
 }'></textarea>
                 
-                <button type="submit" id="submitBtn">Process Data</button>
+                <div class="button-group">
+                    <button type="submit" id="submitBtn">Process Uploaded File</button>
+                    <button type="button" class="btn-sample" id="sampleBtn" onclick="processSample()">🎯 Try with Sample Data</button>
+                </div>
             </form>
             
             <div class="loader" id="loader"></div>
@@ -320,20 +368,37 @@ async def root():
             <div id="result"></div>
         </div>
         
+        <div class="footer">
+            View source code on <a href="https://github.com/Lt-wei/ai-solutions-portfolio" target="_blank">GitHub</a>
+        </div>
+        
         <script>
             document.getElementById('uploadForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 
+                const fileInput = document.getElementById('fileInput');
+                if (!fileInput.files[0]) {
+                    alert('Please select a file to upload');
+                    return;
+                }
+                
+                // Check file size (10MB limit for serverless)
+                if (fileInput.files[0].size > 10 * 1024 * 1024) {
+                    alert('File size exceeds 10MB limit. Please use a smaller file.');
+                    return;
+                }
+                
                 const submitBtn = document.getElementById('submitBtn');
+                const sampleBtn = document.getElementById('sampleBtn');
                 const loader = document.getElementById('loader');
                 const resultDiv = document.getElementById('result');
                 
                 submitBtn.disabled = true;
+                sampleBtn.disabled = true;
                 loader.style.display = 'block';
                 resultDiv.style.display = 'none';
                 
                 const formData = new FormData();
-                const fileInput = document.getElementById('fileInput');
                 const rulesInput = document.getElementById('rulesInput');
                 
                 formData.append('file', fileInput.files[0]);
@@ -372,8 +437,51 @@ async def root():
                 
                 resultDiv.style.display = 'block';
                 submitBtn.disabled = false;
+                sampleBtn.disabled = false;
                 loader.style.display = 'none';
             });
+            
+            async function processSample() {
+                const submitBtn = document.getElementById('submitBtn');
+                const sampleBtn = document.getElementById('sampleBtn');
+                const loader = document.getElementById('loader');
+                const resultDiv = document.getElementById('result');
+                
+                submitBtn.disabled = true;
+                sampleBtn.disabled = true;
+                loader.style.display = 'block';
+                resultDiv.style.display = 'none';
+                
+                try {
+                    const response = await fetch('/sample');
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        resultDiv.className = 'success';
+                        resultDiv.innerHTML = `
+                            <h3 style="color: #38a169; margin-bottom: 15px;">✅ Sample Processing Complete!</h3>
+                            <p><strong>Processed:</strong> ${data.report.original_rows} → ${data.report.final_rows} rows</p>
+                            <p><strong>Time:</strong> ${data.processing_time.toFixed(3)}s</p>
+                            <pre>${JSON.stringify(data.report, null, 2)}</pre>
+                            <a href="/download/${data.output_file}" class="download-link" download>📥 Download Processed Excel</a>
+                            <a href="/download/${data.report_file}" class="download-link" download style="background: #3182ce; margin-left: 10px;">📄 Download Report</a>
+                        `;
+                    } else {
+                        throw new Error(data.detail || 'Sample processing failed');
+                    }
+                } catch (error) {
+                    resultDiv.className = 'error';
+                    resultDiv.innerHTML = `
+                        <h3 style="color: #e53e3e; margin-bottom: 10px;">❌ Error</h3>
+                        <p>${error.message}</p>
+                    `;
+                }
+                
+                resultDiv.style.display = 'block';
+                submitBtn.disabled = false;
+                sampleBtn.disabled = false;
+                loader.style.display = 'none';
+            }
         </script>
     </body>
     </html>
@@ -399,6 +507,9 @@ async def process_excel(
     
     with open(input_path, "wb") as f:
         content = await file.read()
+        # Check file size (10MB limit for serverless)
+        if len(content) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="File size exceeds 10MB limit")
         f.write(content)
     
     logger.info(f"File uploaded: {input_path}")
@@ -469,6 +580,66 @@ async def download_file(filename: str):
         filename=filename,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
+
+@app.get("/sample")
+async def process_sample():
+    """Process sample data for demo purposes"""
+    import time
+    start_time = time.time()
+    
+    try:
+        # Load sample file and rules
+        sample_file_path = Path(__file__).parent / "sample_inputs" / "customers_raw.xlsx"
+        sample_rules_path = Path(__file__).parent / "sample_inputs" / "rules.json"
+        
+        if not sample_file_path.exists():
+            raise HTTPException(status_code=500, detail="Sample data files not found")
+        
+        # Read sample data
+        df = pd.read_excel(sample_file_path)
+        
+        # Read sample rules
+        with open(sample_rules_path, "r") as f:
+            rules_dict = json.load(f)
+        
+        # Process through pipeline
+        processor = ExcelProcessor(df, rules_dict)
+        processed_df, report = (
+            processor
+            .clean_data()
+            .deduplicate()
+            .transform_fields()
+            .apply_rules()
+            .get_processed_data()
+        )
+        
+        # Save outputs
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_filename = f"processed_sample_{timestamp}.xlsx"
+        output_path = OUTPUT_DIR / output_filename
+        processed_df.to_excel(output_path, index=False, engine='openpyxl')
+        
+        report_filename = f"report_sample_{timestamp}.json"
+        report_path = OUTPUT_DIR / report_filename
+        with open(report_path, "w") as f:
+            json.dump(report, f, indent=2)
+        
+        processing_time = time.time() - start_time
+        
+        logger.info(f"Sample processing complete: {len(processed_df)} rows output")
+        
+        return {
+            "status": "success",
+            "output_file": output_filename,
+            "report_file": report_filename,
+            "report": report,
+            "processing_time": processing_time
+        }
+        
+    except Exception as e:
+        logger.error(f"Sample processing error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Sample processing failed: {str(e)}")
 
 
 @app.get("/health")
