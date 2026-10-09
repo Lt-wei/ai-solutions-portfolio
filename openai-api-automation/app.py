@@ -19,7 +19,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 
-from portfolio_ui import demo_page, demo_badge
+from portfolio_ui import dashboard_page, demo_badge, sparkline_svg
 
 # Load environment
 load_dotenv()
@@ -301,143 +301,195 @@ async def root():
     notice = None
     if not OPENAI_AVAILABLE:
         notice = (
-            "Responses and classification use rule-based mock logic when no API key is set. "
-            "Add <code>OPENAI_API_KEY</code> for live OpenAI processing."
+            "Routing and replies use <strong>mock heuristics</strong> until you configure "
+            "<code>OPENAI_API_KEY</code> for live model responses."
         )
 
     badge = demo_badge(mock_ai=not OPENAI_AVAILABLE, openai_active=OPENAI_AVAILABLE)
+    spark = sparkline_svg()
 
-    main_html = """
-            <form id="inquiryForm">
-                <div class="form-group">
-                    <label class="section-label" for="inquiryText">Your inquiry</label>
-                    <textarea
-                        id="inquiryText"
-                        placeholder="Describe your question, issue, or request..."
-                        required
-                        minlength="10"
-                    ></textarea>
+    body = f"""
+        <section class="kpi-strip" aria-label="Queue metrics">
+            <div class="kpi-card"><span class="kpi-label">Open today</span><div class="kpi-row"><span class="kpi-value" id="kpiOpen">24</span>{spark}</div></div>
+            <div class="kpi-card"><span class="kpi-label">Auto-resolved</span><div class="kpi-row"><span class="kpi-value" id="kpiResolved">18</span>{sparkline_svg("2,11 8,8 14,6 20,7 26,4")}</div></div>
+            <div class="kpi-card"><span class="kpi-label">Avg confidence</span><div class="kpi-row"><span class="kpi-value" id="kpiConf">68%</span>{sparkline_svg("2,10 9,7 15,8 21,5 27,6")}</div></div>
+            <div class="kpi-card"><span class="kpi-label">Queue</span><div class="kpi-row"><span class="kpi-value" id="kpiQueue" style="font-size:1rem">Medium</span><span class="pill pill-warning">Active</span></div></div>
+        </section>
+
+        <div class="dashboard-grid">
+            <section class="panel">
+                <div class="panel-head"><span class="panel-title">New inquiry</span><span class="panel-meta">Min 10 chars</span></div>
+                <div class="panel-body">
+                    <form id="inquiryForm">
+                        <label class="field-label" for="inquiryText">Message</label>
+                        <textarea id="inquiryText" placeholder="Describe the issue or question..." minlength="10" required></textarea>
+                        <label class="field-label" for="userName">Name</label>
+                        <input type="text" id="userName" placeholder="Optional" autocomplete="name">
+                        <label class="field-label" for="userEmail">Email</label>
+                        <input type="email" id="userEmail" placeholder="Optional" autocomplete="email">
+                        <div class="actions">
+                            <button type="submit" class="btn btn-primary" id="submitBtn">Analyze &amp; respond</button>
+                            <button type="button" class="btn btn-secondary" id="sampleBtn">Load sample</button>
+                        </div>
+                        <a class="btn btn-tertiary" href="/stats" target="_blank" rel="noopener">Raw JSON log</a>
+                    </form>
                 </div>
+            </section>
 
-                <div class="form-group">
-                    <label class="section-label" for="userName">Name (optional)</label>
-                    <input type="text" id="userName" placeholder="Jane Doe" autocomplete="name">
+            <section class="panel" id="resultPanel">
+                <div class="panel-head">
+                    <div class="preview-status">
+                        <span class="panel-title">Triage &amp; draft reply</span>
+                        <span class="pill pill-warning" id="resultPill">Preview</span>
+                    </div>
+                    <span class="panel-meta" id="resultMeta">Sample classification</span>
                 </div>
-
-                <div class="form-group">
-                    <label class="section-label" for="userEmail">Email (optional)</label>
-                    <input type="email" id="userEmail" placeholder="jane@example.com" autocomplete="email">
+                <div class="result-card" id="resultCard"></div>
+                <div class="panel-head" style="border-top:1px solid var(--border-subtle)">
+                    <span class="panel-title">Recent inquiries</span>
+                    <span class="panel-meta" id="recentMeta">Last 5</span>
                 </div>
-
-                <div class="actions">
-                    <button type="submit" class="btn btn-primary" id="submitBtn">Submit inquiry</button>
-                    <button type="button" class="btn btn-secondary" id="sampleBtn">Try sample inquiry</button>
+                <div class="panel-body flush">
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <thead><tr><th>ID</th><th>Category</th><th>Priority</th><th>Snippet</th></tr></thead>
+                            <tbody id="recentRows"></tbody>
+                        </table>
+                    </div>
                 </div>
-            </form>
+                <div class="toast-error" id="errorToast" hidden></div>
+            </section>
+        </div>
 
-            <div class="loader" id="loader"></div>
-            <div id="result"></div>
+        <script>
+        (function() {{
+            const SEED_RESULT = {{
+                id: 1042,
+                category: 'sales',
+                priority: 'high',
+                sentiment: 'positive',
+                ai_response: 'Thank you for your interest in our Enterprise plan. Our team will follow up with pricing and security documentation within one business day.',
+                confidence_score: 0.68,
+                processing_method: 'mock_heuristic'
+            }};
+            const SEED_RECENT = [
+                {{ id: 1039, category: 'billing', priority: 'medium', text: 'Question about invoice #8821...' }},
+                {{ id: 1040, category: 'technical', priority: 'high', text: 'API integration returns 502...' }},
+                {{ id: 1041, category: 'support', priority: 'low', text: 'How do I reset workspace roles?' }},
+            ];
 
-            <a href="/stats" class="link-quiet">View inquiry log (JSON)</a>
+            function priorityPill(p) {{
+                const cls = p === 'urgent' || p === 'high' ? 'pill-warning' : (p === 'low' ? 'pill-mock' : 'pill-neutral');
+                return `<span class="pill ${{cls}}">${{p}}</span>`;
+            }}
 
-            <script>
-            (function() {
-                function renderResult(data, title) {
-                    return `
-                        <p class="result-title success">${title}</p>
-                        <div class="result-field">
-                            <div class="result-label">Inquiry ID</div>
-                            <div class="result-value">#${data.id}</div>
-                        </div>
-                        <div class="result-field">
-                            <div class="result-label">Category</div>
-                            <div class="result-value">${data.category}</div>
-                        </div>
-                        <div class="result-field">
-                            <div class="result-label">Priority</div>
-                            <div class="result-value">${data.priority}</div>
-                        </div>
-                        <div class="result-field">
-                            <div class="result-label">Sentiment</div>
-                            <div class="result-value">${data.sentiment}</div>
-                        </div>
-                        <div class="result-field">
-                            <div class="result-label">Suggested response</div>
-                            <div class="result-value">${data.ai_response}</div>
-                        </div>
-                        <div class="result-field">
-                            <div class="result-label">Confidence</div>
-                            <div class="result-value">${(data.confidence_score * 100).toFixed(0)}%</div>
-                        </div>
-                        <p class="meta-line">Method: ${data.processing_method}</p>`;
-                }
+            function renderResult(data) {{
+                document.getElementById('resultCard').innerHTML = `
+                    <div class="result-grid">
+                        <div class="result-kv"><label>Inquiry</label><span>#${{data.id}}</span></div>
+                        <div class="result-kv"><label>Category</label><span>${{data.category}}</span></div>
+                        <div class="result-kv"><label>Priority</label><span>${{priorityPill(data.priority)}}</span></div>
+                        <div class="result-kv"><label>Sentiment</label><span>${{data.sentiment}}</span></div>
+                        <div class="result-kv"><label>Confidence</label><span>${{Math.round((data.confidence_score||0)*100)}}%</span></div>
+                        <div class="result-kv"><label>Method</label><span class="pill pill-mock">${{data.processing_method}}</span></div>
+                    </div>
+                    <label class="field-label">Drafted reply</label>
+                    <div class="reply-block">${{data.ai_response}}</div>`;
+                document.getElementById('kpiConf').textContent = Math.round((data.confidence_score||0)*100) + '%';
+            }}
 
-                async function run(url, options, successTitle, resetForm) {
-                    const submitBtn = document.getElementById('submitBtn');
-                    const sampleBtn = document.getElementById('sampleBtn');
-                    const loader = document.getElementById('loader');
-                    const resultDiv = document.getElementById('result');
+            function renderRecent(list) {{
+                document.getElementById('recentRows').innerHTML = list.map(r => `
+                    <tr>
+                        <td>#${{r.id}}</td>
+                        <td>${{r.category}}</td>
+                        <td>${{priorityPill(r.priority)}}</td>
+                        <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis">${{r.text}}</td>
+                    </tr>`).join('');
+            }}
 
-                    submitBtn.disabled = true;
-                    sampleBtn.disabled = true;
-                    loader.style.display = 'block';
-                    resultDiv.style.display = 'none';
+            function showSeed() {{
+                renderResult(SEED_RESULT);
+                renderRecent(SEED_RECENT);
+                document.getElementById('resultPill').className = 'pill pill-warning';
+                document.getElementById('resultPill').textContent = 'Preview';
+                document.getElementById('resultMeta').textContent = 'Illustrative triage — submit or load sample';
+            }}
 
-                    try {
-                        const response = await fetch(url, options);
-                        const data = await response.json();
-                        if (response.ok) {
-                            resultDiv.className = 'success';
-                            resultDiv.innerHTML = renderResult(data, successTitle);
-                            if (resetForm) document.getElementById('inquiryForm').reset();
-                        } else {
-                            throw new Error(data.detail || 'Submission failed');
-                        }
-                    } catch (error) {
-                        resultDiv.className = 'error';
-                        resultDiv.innerHTML = `<p class="result-title error">Request failed</p><p>${error.message}</p>`;
-                    }
+            async function refreshStats() {{
+                try {{
+                    const res = await fetch('/stats');
+                    if (!res.ok) return;
+                    const stats = await res.json();
+                    document.getElementById('kpiOpen').textContent = stats.total_inquiries || 0;
+                    const recent = (stats.recent_inquiries || []).slice(0, 5);
+                    if (recent.length) {{
+                        renderRecent(recent.map(r => ({{
+                            id: r.id,
+                            category: r.category,
+                            priority: r.priority,
+                            text: r.text
+                        }})));
+                        document.getElementById('recentMeta').textContent = 'From database';
+                    }}
+                }} catch (_) {{}}
+            }}
 
-                    resultDiv.style.display = 'block';
-                    submitBtn.disabled = false;
-                    sampleBtn.disabled = false;
-                    loader.style.display = 'none';
-                }
+            async function run(url, options, resetForm) {{
+                const panel = document.getElementById('resultPanel');
+                panel.classList.add('panel-loading');
+                document.getElementById('submitBtn').disabled = true;
+                document.getElementById('sampleBtn').disabled = true;
+                try {{
+                    const res = await fetch(url, options);
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || 'Request failed');
+                    renderResult(data);
+                    document.getElementById('resultPill').className = 'pill pill-success';
+                    document.getElementById('resultPill').textContent = 'Processed';
+                    document.getElementById('resultMeta').textContent = 'Stored with notification stubs';
+                    document.getElementById('errorToast').hidden = true;
+                    if (resetForm) document.getElementById('inquiryForm').reset();
+                    await refreshStats();
+                }} catch (e) {{
+                    const t = document.getElementById('errorToast');
+                    t.textContent = e.message;
+                    t.hidden = false;
+                }} finally {{
+                    panel.classList.remove('panel-loading');
+                    document.getElementById('submitBtn').disabled = false;
+                    document.getElementById('sampleBtn').disabled = false;
+                }}
+            }}
 
-                document.getElementById('inquiryForm').addEventListener('submit', async (e) => {
-                    e.preventDefault();
-                    const text = document.getElementById('inquiryText').value.trim();
-                    if (text.length < 10) {
-                        alert('Please enter at least 10 characters.');
-                        return;
-                    }
-                    const inquiry = {
+            document.getElementById('inquiryForm').addEventListener('submit', e => {{
+                e.preventDefault();
+                const text = document.getElementById('inquiryText').value.trim();
+                if (text.length < 10) {{ alert('Enter at least 10 characters.'); return; }}
+                run('/submit', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
                         inquiry_text: text,
                         user_name: document.getElementById('userName').value || null,
                         user_email: document.getElementById('userEmail').value || null
-                    };
-                    await run('/submit', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify(inquiry)
-                    }, 'Inquiry processed', true);
-                });
-
-                document.getElementById('sampleBtn').addEventListener('click', () =>
-                    run('/sample', {}, 'Sample inquiry processed', false)
-                );
-            })();
-            </script>
+                    }})
+                }}, true);
+            }});
+            document.getElementById('sampleBtn').addEventListener('click', () => run('/sample', {{}}, false));
+            showSeed();
+            refreshStats();
+        }})();
+        </script>
     """
 
-    return demo_page(
+    return dashboard_page(
         page_title="Inquiry Automation — Leane",
-        product_title="Inquiry Automation",
-        value_prop="Categorize customer inquiries, assign priority, and draft responses with optional notifications.",
+        product_name="Inquiry Automation",
         badge_text=badge,
-        pipeline_html="Submit → analyze → categorize → store → respond → notify (Telegram/email stubs).",
+        subtitle="Classify inbound messages, assign priority, and draft responses with optional Telegram and email stubs.",
         notice_html=notice,
-        main_html=main_html,
+        body_html=body,
     )
 
 

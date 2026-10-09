@@ -13,7 +13,7 @@ from pathlib import Path
 import pandas as pd
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
-from portfolio_ui import demo_page, demo_badge, UPLOAD_ICON_SVG
+from portfolio_ui import dashboard_page, demo_badge, UPLOAD_ICON_SVG, sparkline_svg
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -139,148 +139,202 @@ class ExcelProcessor:
         return self.df, self.report
 
 
+def _preview_payload(df: pd.DataFrame, limit: int = 10) -> dict:
+    """First rows for dashboard preview (additive API field)."""
+    slice_df = df.head(limit)
+    return {
+        "columns": [str(c) for c in slice_df.columns],
+        "rows": slice_df.fillna("").astype(str).to_dict(orient="records"),
+    }
+
+
+def _duplicates_removed(report: dict) -> int:
+    for step in report.get("steps", []):
+        if step.get("step") == "deduplicate":
+            return int(step.get("duplicates_removed", 0))
+    return 0
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root():
     """Serve the web UI"""
-    main_html = f"""
-            <form id="uploadForm" enctype="multipart/form-data">
-                <div class="upload-zone" id="uploadZone">
-                    {UPLOAD_ICON_SVG}
-                    <p class="upload-title">Upload Excel or CSV</p>
-                    <p class="upload-hint">Single file · Max 10MB</p>
-                    <label class="btn-file">
-                        <input type="file" name="file" id="fileInput" accept=".xlsx,.xls,.csv">
-                        Choose file
-                    </label>
-                    <p class="file-selected" id="fileName" aria-live="polite"></p>
+    spark = sparkline_svg()
+    body = f"""
+        <section class="kpi-strip" aria-label="Pipeline metrics">
+            <div class="kpi-card"><span class="kpi-label">Total rows</span><div class="kpi-row"><span class="kpi-value" id="kpiTotal">10,248</span>{spark}</div></div>
+            <div class="kpi-card"><span class="kpi-label">Cleaned</span><div class="kpi-row"><span class="kpi-value" id="kpiCleaned">9,892</span>{sparkline_svg("2,10 8,7 14,8 20,5 26,6")}</div></div>
+            <div class="kpi-card"><span class="kpi-label">Duplicates removed</span><div class="kpi-row"><span class="kpi-value" id="kpiDupes">312</span>{sparkline_svg("2,12 9,9 16,10 22,4 26,5")}</div></div>
+            <div class="kpi-card"><span class="kpi-label">Columns</span><div class="kpi-row"><span class="kpi-value" id="kpiCols">12</span><div class="bar-chart" aria-hidden="true"><span style="height:40%"></span><span style="height:70%"></span><span style="height:55%"></span><span style="height:90%"></span><span style="height:65%"></span></div></div></div>
+        </section>
+
+        <div class="dashboard-grid">
+            <section class="panel" aria-label="Controls">
+                <div class="panel-head"><span class="panel-title">Import & rules</span><span class="panel-meta">Max 10MB</span></div>
+                <div class="panel-body">
+                    <form id="uploadForm" enctype="multipart/form-data">
+                        <div class="upload-zone" id="uploadZone">
+                            {UPLOAD_ICON_SVG}
+                            <p class="upload-title">Drop Excel or CSV</p>
+                            <p class="upload-hint">or browse a single workbook</p>
+                            <label class="btn-file"><input type="file" name="file" id="fileInput" accept=".xlsx,.xls,.csv">Browse files</label>
+                            <div class="file-chips" id="fileChips" aria-live="polite"></div>
+                        </div>
+                        <label class="field-label" for="rulesInput">Processing rules (JSON)</label>
+                        <textarea id="rulesInput" name="rules" placeholder='{{"dedupe_columns":["email"]}}'></textarea>
+                        <div class="actions">
+                            <button type="submit" class="btn btn-primary" id="submitBtn">Run pipeline</button>
+                            <button type="button" class="btn btn-secondary" id="sampleBtn">Load sample</button>
+                        </div>
+                        <button type="button" class="btn btn-tertiary" id="resetPreviewBtn">Reset preview</button>
+                    </form>
                 </div>
+            </section>
 
-                <label class="section-label" for="rulesInput">Processing rules (optional JSON)</label>
-                <textarea name="rules" id="rulesInput" placeholder='{{
-  "dedupe_columns": ["email"],
-  "transformations": {{
-    "name": "title",
-    "email": "lowercase"
-  }},
-  "filters": {{
-    "age": {{"min_value": 18}}
-  }}
-}}'></textarea>
-
-                <div class="actions">
-                    <button type="submit" class="btn btn-primary" id="submitBtn">Process uploaded file</button>
-                    <button type="button" class="btn btn-secondary" id="sampleBtn">Try sample data</button>
+            <section class="panel" id="previewPanel" aria-label="Live preview">
+                <div class="panel-head">
+                    <div class="preview-status">
+                        <span class="panel-title">Output preview</span>
+                        <span class="pill pill-warning" id="previewPill">Sample</span>
+                    </div>
+                    <span class="panel-meta" id="previewMeta">Showing illustrative rows</span>
                 </div>
-            </form>
+                <div class="panel-body flush panel-loading" id="previewBody">
+                    <div class="table-wrap">
+                        <table class="data-table" id="previewTable">
+                            <thead id="previewHead"></thead>
+                            <tbody id="previewBodyRows"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="download-bar" id="downloadBar" hidden>
+                    <a href="#" class="download-link" id="dlExcel" download>Export Excel</a>
+                    <a href="#" class="download-link" id="dlReport" download>Processing report</a>
+                </div>
+                <div id="errorToast" class="toast-error" hidden></div>
+            </section>
+        </div>
 
-            <div class="loader" id="loader"></div>
-            <div id="result"></div>
+        <script>
+        (function() {{
+            const SEED = {{
+                columns: ['customer_id', 'name', 'email', 'region', 'status'],
+                rows: [
+                    {{ customer_id: 'C-1042', name: 'Ava Chen', email: 'ava.chen@acme.io', region: 'West', status: 'Active' }},
+                    {{ customer_id: 'C-1043', name: 'Marcus Lee', email: 'marcus.lee@northwind.co', region: 'East', status: 'Active' }},
+                    {{ customer_id: 'C-1044', name: 'Sofia Patel', email: 'sofia@brightlabs.com', region: 'EU', status: 'Review' }},
+                    {{ customer_id: 'C-1045', name: 'James Ortiz', email: 'j.ortiz@harbor.dev', region: 'West', status: 'Active' }},
+                    {{ customer_id: 'C-1046', name: 'Emily Ross', email: 'emily.ross@stripe.example', region: 'East', status: 'Churn risk' }},
+                ]
+            }};
 
-            <script>
-            (function() {{
-                const fileInput = document.getElementById('fileInput');
-                const fileName = document.getElementById('fileName');
-                const zone = document.getElementById('uploadZone');
+            const fileInput = document.getElementById('fileInput');
+            const fileChips = document.getElementById('fileChips');
+            const zone = document.getElementById('uploadZone');
+            const previewPanel = document.getElementById('previewPanel');
+            const previewPill = document.getElementById('previewPill');
+            const previewMeta = document.getElementById('previewMeta');
+            const downloadBar = document.getElementById('downloadBar');
+            const errorToast = document.getElementById('errorToast');
 
-                fileInput.addEventListener('change', () => {{
-                    const f = fileInput.files[0];
-                    fileName.textContent = f ? 'Selected: ' + f.name : '';
-                }});
+            function renderTable(columns, rows) {{
+                document.getElementById('previewHead').innerHTML =
+                    '<tr>' + columns.map(c => `<th>${{c}}</th>`).join('') + '</tr>';
+                document.getElementById('previewBodyRows').innerHTML = rows.map(row =>
+                    '<tr>' + columns.map(c => `<td>${{row[c] ?? ''}}</td>`).join('') + '</tr>'
+                ).join('');
+            }}
 
-                ['dragenter', 'dragover'].forEach(ev => zone.addEventListener(ev, e => {{
-                    e.preventDefault();
-                    zone.classList.add('is-dragover');
-                }}));
-                ['dragleave', 'drop'].forEach(ev => zone.addEventListener(ev, e => {{
-                    e.preventDefault();
-                    zone.classList.remove('is-dragover');
-                }}));
-                zone.addEventListener('drop', e => {{
-                    if (e.dataTransfer.files.length) {{
-                        fileInput.files = e.dataTransfer.files;
-                        fileInput.dispatchEvent(new Event('change'));
-                    }}
-                }});
+            function setKpis(total, cleaned, dupes, cols) {{
+                const fmt = n => Number(n).toLocaleString();
+                document.getElementById('kpiTotal').textContent = fmt(total);
+                document.getElementById('kpiCleaned').textContent = fmt(cleaned);
+                document.getElementById('kpiDupes').textContent = fmt(dupes);
+                document.getElementById('kpiCols').textContent = fmt(cols);
+            }}
 
-                function renderSuccess(data, title) {{
-                    return `
-                        <p class="result-title success">${{title}}</p>
-                        <p><strong>Rows:</strong> ${{data.report.original_rows}} → ${{data.report.final_rows}}</p>
-                        <p><strong>Time:</strong> ${{data.processing_time.toFixed(3)}}s</p>
-                        <pre class="result-json">${{JSON.stringify(data.report, null, 2)}}</pre>
-                        <div class="download-row">
-                            <a href="/download/${{data.output_file}}" class="download-link" download>Download Excel</a>
-                            <a href="/download/${{data.report_file}}" class="download-link alt" download>Download report</a>
-                        </div>`;
+            function showSeed() {{
+                renderTable(SEED.columns, SEED.rows);
+                setKpis(10248, 9892, 312, 12);
+                previewPill.className = 'pill pill-warning';
+                previewPill.textContent = 'Sample';
+                previewMeta.textContent = 'Illustrative cleaned rows — run pipeline for live data';
+                downloadBar.hidden = true;
+                errorToast.hidden = true;
+            }}
+
+            function setLoading(on) {{
+                previewPanel.classList.toggle('panel-loading', on);
+                document.getElementById('submitBtn').disabled = on;
+                document.getElementById('sampleBtn').disabled = on;
+            }}
+
+            function applyResult(data) {{
+                const report = data.report;
+                setKpis(report.original_rows, report.final_rows, data.duplicates_removed ?? 0, report.final_columns);
+                if (data.preview) renderTable(data.preview.columns, data.preview.rows);
+                previewPill.className = 'pill pill-success';
+                previewPill.textContent = 'Success';
+                previewMeta.textContent = `Processed in ${{data.processing_time.toFixed(2)}}s · ${{report.final_rows}} rows export-ready`;
+                document.getElementById('dlExcel').href = '/download/' + data.output_file;
+                document.getElementById('dlReport').href = '/download/' + data.report_file;
+                downloadBar.hidden = false;
+                errorToast.hidden = true;
+            }}
+
+            fileInput.addEventListener('change', () => {{
+                fileChips.innerHTML = '';
+                const f = fileInput.files[0];
+                if (f) fileChips.innerHTML = `<span class="file-chip">${{f.name}}</span>`;
+            }});
+
+            ['dragenter','dragover'].forEach(ev => zone.addEventListener(ev, e => {{ e.preventDefault(); zone.classList.add('is-dragover'); }}));
+            ['dragleave','drop'].forEach(ev => zone.addEventListener(ev, e => {{ e.preventDefault(); zone.classList.remove('is-dragover'); }}));
+            zone.addEventListener('drop', e => {{
+                if (e.dataTransfer.files.length) {{
+                    fileInput.files = e.dataTransfer.files;
+                    fileInput.dispatchEvent(new Event('change'));
                 }}
+            }});
 
-                function renderError(msg) {{
-                    return `<p class="result-title error">Processing failed</p><p>${{msg}}</p>`;
+            async function run(url, options) {{
+                setLoading(true);
+                try {{
+                    const response = await fetch(url, options);
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.detail || 'Processing failed');
+                    applyResult(data);
+                }} catch (err) {{
+                    errorToast.textContent = err.message;
+                    errorToast.hidden = false;
+                }} finally {{
+                    setLoading(false);
                 }}
+            }}
 
-                async function runRequest(url, options, successTitle) {{
-                    const submitBtn = document.getElementById('submitBtn');
-                    const sampleBtn = document.getElementById('sampleBtn');
-                    const loader = document.getElementById('loader');
-                    const resultDiv = document.getElementById('result');
+            document.getElementById('uploadForm').addEventListener('submit', e => {{
+                e.preventDefault();
+                if (!fileInput.files[0]) {{ alert('Choose a file first.'); return; }}
+                if (fileInput.files[0].size > 10 * 1024 * 1024) {{ alert('File exceeds 10MB.'); return; }}
+                const fd = new FormData();
+                fd.append('file', fileInput.files[0]);
+                const rules = document.getElementById('rulesInput').value.trim();
+                if (rules) fd.append('rules', rules);
+                run('/process', {{ method: 'POST', body: fd }});
+            }});
 
-                    submitBtn.disabled = true;
-                    sampleBtn.disabled = true;
-                    loader.style.display = 'block';
-                    resultDiv.style.display = 'none';
-
-                    try {{
-                        const response = await fetch(url, options);
-                        const data = await response.json();
-                        if (response.ok) {{
-                            resultDiv.className = 'success';
-                            resultDiv.innerHTML = renderSuccess(data, successTitle);
-                        }} else {{
-                            throw new Error(data.detail || 'Processing failed');
-                        }}
-                    }} catch (error) {{
-                        resultDiv.className = 'error';
-                        resultDiv.innerHTML = renderError(error.message);
-                    }}
-
-                    resultDiv.style.display = 'block';
-                    submitBtn.disabled = false;
-                    sampleBtn.disabled = false;
-                    loader.style.display = 'none';
-                }}
-
-                document.getElementById('uploadForm').addEventListener('submit', async (e) => {{
-                    e.preventDefault();
-                    const fileInput = document.getElementById('fileInput');
-                    if (!fileInput.files[0]) {{
-                        alert('Please choose a file to upload.');
-                        return;
-                    }}
-                    if (fileInput.files[0].size > 10 * 1024 * 1024) {{
-                        alert('File size exceeds the 10MB limit.');
-                        return;
-                    }}
-                    const formData = new FormData();
-                    const rulesInput = document.getElementById('rulesInput');
-                    formData.append('file', fileInput.files[0]);
-                    if (rulesInput.value.trim()) formData.append('rules', rulesInput.value);
-                    await runRequest('/process', {{ method: 'POST', body: formData }}, 'Processing complete');
-                }});
-
-                document.getElementById('sampleBtn').addEventListener('click', () =>
-                    runRequest('/sample', {{}}, 'Sample run complete')
-                );
-            }})();
-            </script>
+            document.getElementById('sampleBtn').addEventListener('click', () => run('/sample', {{}}));
+            document.getElementById('resetPreviewBtn').addEventListener('click', showSeed);
+            showSeed();
+        }})();
+        </script>
     """
 
-    return demo_page(
+    return dashboard_page(
         page_title="Excel Data Processing — Leane",
-        product_title="Excel Data Processing",
-        value_prop="Automated cleaning, deduplication, and transformation for spreadsheet workflows.",
+        product_name="Excel Data Processing",
         badge_text=demo_badge(sample_only=True),
-        pipeline_html="Clean empty rows → deduplicate → transform fields → apply rules → export with report.",
-        main_html=main_html,
+        subtitle="Clean, dedupe, and transform spreadsheet data with configurable rules and export-ready output.",
+        body_html=body,
     )
 
 
@@ -355,7 +409,9 @@ async def process_excel(
             "output_file": output_filename,
             "report_file": report_filename,
             "report": report,
-            "processing_time": processing_time
+            "processing_time": processing_time,
+            "preview": _preview_payload(processed_df),
+            "duplicates_removed": _duplicates_removed(report),
         }
         
     except Exception as e:
@@ -430,7 +486,9 @@ async def process_sample():
             "output_file": output_filename,
             "report_file": report_filename,
             "report": report,
-            "processing_time": processing_time
+            "processing_time": processing_time,
+            "preview": _preview_payload(processed_df),
+            "duplicates_removed": _duplicates_removed(report),
         }
         
     except Exception as e:

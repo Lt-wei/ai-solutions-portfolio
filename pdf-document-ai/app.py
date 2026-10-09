@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from PyPDF2 import PdfReader
 from dotenv import load_dotenv
 
-from portfolio_ui import demo_page, demo_badge, UPLOAD_ICON_SVG
+from portfolio_ui import dashboard_page, demo_badge, UPLOAD_ICON_SVG, sparkline_svg
 
 # Load environment variables
 load_dotenv()
@@ -246,147 +246,181 @@ async def root():
     notice = None
     if not OPENAI_AVAILABLE:
         notice = (
-            "No OpenAI API key is configured. Extraction uses regex and heuristic patterns "
-            "so you can try the demo safely. Set <code>OPENAI_API_KEY</code> to enable live AI extraction."
+            "Extraction runs in <strong>mock mode</strong> (regex/heuristics) — safe for demos. "
+            "Set <code>OPENAI_API_KEY</code> for live model parsing."
         )
 
     badge = demo_badge(mock_ai=not OPENAI_AVAILABLE, openai_active=OPENAI_AVAILABLE)
+    mode_seed = "AI" if OPENAI_AVAILABLE else "Mock"
+    pill_seed = "pill-neutral" if OPENAI_AVAILABLE else "pill-mock"
 
-    main_html = f"""
-            <form id="uploadForm" enctype="multipart/form-data">
-                <div class="upload-zone" id="uploadZone">
-                    {UPLOAD_ICON_SVG}
-                    <p class="upload-title">Upload PDF contracts</p>
-                    <p class="upload-hint">One or more files · Max 10MB each</p>
-                    <label class="btn-file">
-                        <input type="file" name="files" id="fileInput" accept=".pdf" multiple>
-                        Choose files
-                    </label>
-                    <p class="file-selected" id="fileName" aria-live="polite"></p>
+    body = f"""
+        <section class="kpi-strip" aria-label="Extraction metrics">
+            <div class="kpi-card"><span class="kpi-label">PDF files</span><div class="kpi-row"><span class="kpi-value" id="kpiFiles">3</span>{sparkline_svg()}</div></div>
+            <div class="kpi-card"><span class="kpi-label">Fields extracted</span><div class="kpi-row"><span class="kpi-value" id="kpiFields">21</span>{sparkline_svg("2,9 8,11 14,7 20,8 26,4")}</div></div>
+            <div class="kpi-card"><span class="kpi-label">Mode</span><div class="kpi-row"><span class="kpi-value" id="kpiMode" style="font-size:1rem">{mode_seed}</span><span class="pill {pill_seed}" id="kpiModePill">{mode_seed}</span></div></div>
+            <div class="kpi-card"><span class="kpi-label">Avg confidence</span><div class="kpi-row"><span class="kpi-value" id="kpiConf">68%</span>{sparkline_svg("2,12 7,8 12,9 18,6 24,7 28,5")}</div></div>
+        </section>
+
+        <div class="dashboard-grid">
+            <section class="panel">
+                <div class="panel-head"><span class="panel-title">Document intake</span><span class="panel-meta">Batch PDF</span></div>
+                <div class="panel-body">
+                    <form id="uploadForm" enctype="multipart/form-data">
+                        <div class="upload-zone" id="uploadZone">
+                            {UPLOAD_ICON_SVG}
+                            <p class="upload-title">Drop contract PDFs</p>
+                            <p class="upload-hint">Multiple files · 10MB each</p>
+                            <label class="btn-file"><input type="file" id="fileInput" name="files" accept=".pdf" multiple>Browse files</label>
+                            <div class="file-chips" id="fileChips"></div>
+                        </div>
+                        <div class="actions">
+                            <button type="submit" class="btn btn-primary" id="submitBtn">Run extraction</button>
+                            <button type="button" class="btn btn-secondary" id="sampleBtn">Load sample PDFs</button>
+                        </div>
+                    </form>
                 </div>
+            </section>
 
-                <div class="actions">
-                    <button type="submit" class="btn btn-primary" id="submitBtn">Extract from uploaded PDFs</button>
-                    <button type="button" class="btn btn-secondary" id="sampleBtn">Try sample contracts</button>
+            <section class="panel" id="previewPanel">
+                <div class="panel-head">
+                    <div class="preview-status">
+                        <span class="panel-title">Structured fields</span>
+                        <span class="pill pill-warning" id="statusPill">Preview</span>
+                    </div>
+                    <span class="panel-meta" id="previewMeta">Sample contract rows</span>
                 </div>
-            </form>
-
-            <div class="loader" id="loader"></div>
-            <div id="result"></div>
-
-            <script>
-            (function() {{
-                const fileInput = document.getElementById('fileInput');
-                const fileName = document.getElementById('fileName');
-                const zone = document.getElementById('uploadZone');
-
-                fileInput.addEventListener('change', () => {{
-                    const n = fileInput.files.length;
-                    if (!n) {{ fileName.textContent = ''; return; }}
-                    if (n === 1) fileName.textContent = 'Selected: ' + fileInput.files[0].name;
-                    else fileName.textContent = n + ' files selected';
-                }});
-
-                function renderTable(data, title) {{
-                    const tableRows = data.contracts.map(c => `
-                        <tr>
-                            <td>${{c.contract_no}}</td>
-                            <td>${{c.company}}</td>
-                            <td>${{c.party_a}}</td>
-                            <td>${{c.party_b}}</td>
-                            <td>$${{c.amount.toLocaleString()}}</td>
-                            <td>${{c.date}}</td>
-                            <td>${{(c.confidence * 100).toFixed(0)}}%</td>
-                        </tr>`).join('');
-
-                    return `
-                        <p class="result-title success">${{title}}</p>
-                        <p><strong>Files processed:</strong> ${{data.total_files}}</p>
-                        <p><strong>Contracts:</strong> ${{data.contracts.length}}</p>
-                        <p><strong>Method:</strong> ${{data.contracts[0]?.extraction_method || 'N/A'}}</p>
-                        <p><strong>Time:</strong> ${{data.processing_time.toFixed(2)}}s</p>
+                <div class="panel-body flush">
+                    <div class="table-wrap">
                         <table class="data-table">
                             <thead>
                                 <tr>
-                                    <th>Contract</th>
-                                    <th>Company</th>
-                                    <th>Party A</th>
-                                    <th>Party B</th>
-                                    <th>Amount</th>
-                                    <th>Date</th>
-                                    <th>Conf.</th>
+                                    <th>Contract</th><th>Company</th><th>Party A</th><th>Party B</th>
+                                    <th class="num">Amount</th><th>Date</th><th>Conf.</th>
                                 </tr>
                             </thead>
-                            <tbody>${{tableRows}}</tbody>
+                            <tbody id="contractRows"></tbody>
                         </table>
-                        <div class="download-row">
-                            <a href="/download/${{data.output_file}}" class="download-link" download>Download Excel</a>
-                        </div>`;
-                }}
+                    </div>
+                </div>
+                <div class="download-bar" id="downloadBar" hidden>
+                    <a class="download-link" id="dlExcel" href="#" download>Download Excel export</a>
+                </div>
+                <div class="toast-error" id="errorToast" hidden></div>
+            </section>
+        </div>
 
-                async function run(url, options, successTitle) {{
-                    const submitBtn = document.getElementById('submitBtn');
-                    const sampleBtn = document.getElementById('sampleBtn');
-                    const loader = document.getElementById('loader');
-                    const resultDiv = document.getElementById('result');
+        <script>
+        (function() {{
+            const SEED = [
+                {{ contract_no: 'MSA-2024-018', company: 'Northwind Systems', party_a: 'Northwind Systems', party_b: 'Acme Corp', amount: 125000, date: '2024-03-12', confidence: 0.72 }},
+                {{ contract_no: 'SVC-8841', company: 'Bright Labs LLC', party_a: 'Bright Labs LLC', party_b: 'Harbor Dev Inc', amount: 48000, date: '2024-05-02', confidence: 0.65 }},
+                {{ contract_no: 'EQ-3309', company: 'Summit Equipment', party_a: 'Summit Equipment', party_b: 'Field Ops Co', amount: 92000, date: '2024-01-28', confidence: 0.68 }},
+            ];
+            const defaultMode = '{mode_seed}';
 
-                    submitBtn.disabled = true;
-                    sampleBtn.disabled = true;
-                    loader.style.display = 'block';
-                    resultDiv.style.display = 'none';
+            function rowHtml(c) {{
+                return `<tr>
+                    <td>${{c.contract_no}}</td><td>${{c.company}}</td><td>${{c.party_a}}</td><td>${{c.party_b}}</td>
+                    <td class="num">$${{Number(c.amount).toLocaleString()}}</td><td>${{c.date}}</td>
+                    <td>${{Math.round((c.confidence||0)*100)}}%</td></tr>`;
+            }}
 
-                    try {{
-                        const response = await fetch(url, options);
-                        const data = await response.json();
-                        if (response.ok) {{
-                            resultDiv.className = 'success';
-                            resultDiv.innerHTML = renderTable(data, successTitle);
-                        }} else {{
-                            throw new Error(data.detail || 'Extraction failed');
-                        }}
-                    }} catch (error) {{
-                        resultDiv.className = 'error';
-                        resultDiv.innerHTML = `<p class="result-title error">Extraction failed</p><p>${{error.message}}</p>`;
-                    }}
+            function renderContracts(list) {{
+                document.getElementById('contractRows').innerHTML = list.map(rowHtml).join('');
+            }}
 
-                    resultDiv.style.display = 'block';
-                    submitBtn.disabled = false;
-                    sampleBtn.disabled = false;
-                    loader.style.display = 'none';
-                }}
+            function avgConf(list) {{
+                if (!list.length) return 0;
+                return list.reduce((s,c) => s + (c.confidence||0), 0) / list.length;
+            }}
 
-                document.getElementById('uploadForm').addEventListener('submit', async (e) => {{
-                    e.preventDefault();
-                    if (!fileInput.files.length) {{
-                        alert('Please choose at least one PDF.');
-                        return;
-                    }}
-                    for (const file of fileInput.files) {{
-                        if (file.size > 10 * 1024 * 1024) {{
-                            alert('File exceeds 10MB: ' + file.name);
-                            return;
-                        }}
-                    }}
-                    const formData = new FormData();
-                    for (const file of fileInput.files) formData.append('files', file);
-                    await run('/extract', {{ method: 'POST', body: formData }}, 'Extraction complete');
+            function setKpis(files, fields, mode, confPct) {{
+                document.getElementById('kpiFiles').textContent = files;
+                document.getElementById('kpiFields').textContent = fields;
+                document.getElementById('kpiMode').textContent = mode;
+                const pill = document.getElementById('kpiModePill');
+                pill.textContent = mode;
+                pill.className = 'pill ' + (mode === 'AI' ? 'pill-neutral' : 'pill-mock');
+                document.getElementById('kpiConf').textContent = confPct + '%';
+            }}
+
+            function showSeed() {{
+                renderContracts(SEED);
+                setKpis(3, 21, defaultMode, Math.round(avgConf(SEED)*100));
+                document.getElementById('statusPill').className = 'pill pill-warning';
+                document.getElementById('statusPill').textContent = 'Preview';
+                document.getElementById('previewMeta').textContent = 'Illustrative extraction — upload or load samples';
+                document.getElementById('downloadBar').hidden = true;
+            }}
+
+            function applyData(data) {{
+                renderContracts(data.contracts);
+                const mode = (data.contracts[0]?.extraction_method || '').includes('openai') ? 'AI' : 'Mock';
+                setKpis(data.total_files, data.contracts.length * 7, mode, Math.round(avgConf(data.contracts)*100));
+                document.getElementById('statusPill').className = 'pill pill-success';
+                document.getElementById('statusPill').textContent = 'Success';
+                document.getElementById('previewMeta').textContent = `${{data.contracts.length}} contracts · ${{data.processing_time.toFixed(2)}}s`;
+                document.getElementById('dlExcel').href = '/download/' + data.output_file;
+                document.getElementById('downloadBar').hidden = false;
+                document.getElementById('errorToast').hidden = true;
+            }}
+
+            const fileInput = document.getElementById('fileInput');
+            const zone = document.getElementById('uploadZone');
+            fileInput.addEventListener('change', () => {{
+                const chips = document.getElementById('fileChips');
+                chips.innerHTML = '';
+                Array.from(fileInput.files).forEach(f => {{
+                    chips.innerHTML += `<span class="file-chip">${{f.name}}</span>`;
                 }});
+            }});
 
-                document.getElementById('sampleBtn').addEventListener('click', () =>
-                    run('/sample', {{}}, 'Sample extraction complete')
-                );
-            }})();
-            </script>
+            ['dragenter','dragover'].forEach(ev => zone.addEventListener(ev, e => {{ e.preventDefault(); zone.classList.add('is-dragover'); }}));
+            ['dragleave','drop'].forEach(ev => zone.addEventListener(ev, e => {{ e.preventDefault(); zone.classList.remove('is-dragover'); }}));
+
+            async function run(url, options) {{
+                const panel = document.getElementById('previewPanel');
+                panel.classList.add('panel-loading');
+                document.getElementById('submitBtn').disabled = true;
+                document.getElementById('sampleBtn').disabled = true;
+                try {{
+                    const res = await fetch(url, options);
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || 'Extraction failed');
+                    applyData(data);
+                }} catch (e) {{
+                    const t = document.getElementById('errorToast');
+                    t.textContent = e.message;
+                    t.hidden = false;
+                }} finally {{
+                    panel.classList.remove('panel-loading');
+                    document.getElementById('submitBtn').disabled = false;
+                    document.getElementById('sampleBtn').disabled = false;
+                }}
+            }}
+
+            document.getElementById('uploadForm').addEventListener('submit', e => {{
+                e.preventDefault();
+                if (!fileInput.files.length) {{ alert('Add at least one PDF.'); return; }}
+                for (const f of fileInput.files) if (f.size > 10*1024*1024) {{ alert(f.name + ' exceeds 10MB'); return; }}
+                const fd = new FormData();
+                for (const f of fileInput.files) fd.append('files', f);
+                run('/extract', {{ method: 'POST', body: fd }});
+            }});
+            document.getElementById('sampleBtn').addEventListener('click', () => run('/sample', {{}}));
+            showSeed();
+        }})();
+        </script>
     """
 
-    return demo_page(
+    return dashboard_page(
         page_title="PDF Document AI — Leane",
-        product_title="PDF Document AI",
-        value_prop="Extract structured contract fields from PDFs and export to Excel.",
+        product_name="PDF Document AI",
         badge_text=badge,
-        pipeline_html="PDF → text extraction → AI or heuristic parsing → structured rows → Excel export.",
+        subtitle="Parse contract PDFs into structured fields with AI or heuristic fallback, then export to Excel.",
         notice_html=notice,
-        main_html=main_html,
+        body_html=body,
     )
 
 
