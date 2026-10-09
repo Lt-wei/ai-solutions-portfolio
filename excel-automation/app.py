@@ -13,7 +13,7 @@ from pathlib import Path
 import pandas as pd
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
+from portfolio_ui import demo_page, demo_badge, UPLOAD_ICON_SVG
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -142,350 +142,146 @@ class ExcelProcessor:
 @app.get("/", response_class=HTMLResponse)
 async def root():
     """Serve the web UI"""
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Excel Automation - Data Processing Pipeline</title>
-        <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                min-height: 100vh;
-                display: flex;
-                flex-direction: column;
-            }
-            .banner {
-                background: #1a202c;
-                color: white;
-                padding: 12px 20px;
-                text-align: center;
-                font-size: 14px;
-            }
-            .banner strong { color: #fbbf24; }
-            .container {
-                max-width: 800px;
-                margin: 20px auto;
-                background: white;
-                border-radius: 16px;
-                padding: 40px;
-                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-                flex: 1;
-            }
-            h1 {
-                color: #2d3748;
-                margin-bottom: 10px;
-                font-size: 32px;
-            }
-            .subtitle {
-                color: #718096;
-                margin-bottom: 30px;
-                font-size: 16px;
-            }
-            .upload-section {
-                border: 2px dashed #cbd5e0;
-                border-radius: 12px;
-                padding: 30px;
-                margin-bottom: 20px;
-                text-align: center;
-                transition: all 0.3s;
-            }
-            .upload-section:hover {
-                border-color: #667eea;
-                background: #f7fafc;
-            }
-            input[type="file"] {
-                margin: 15px 0;
-                padding: 10px;
-            }
-            textarea {
-                width: 100%;
-                min-height: 150px;
-                padding: 15px;
-                border: 1px solid #e2e8f0;
-                border-radius: 8px;
-                font-family: 'Courier New', monospace;
-                font-size: 13px;
-                margin-bottom: 20px;
-                resize: vertical;
-            }
-            .button-group {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 10px;
-                margin-top: 20px;
-            }
-            button {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                padding: 14px 32px;
-                border: none;
-                border-radius: 8px;
-                font-size: 16px;
-                font-weight: 600;
-                cursor: pointer;
-                transition: transform 0.2s, box-shadow 0.2s;
-            }
-            button:hover {
-                transform: translateY(-2px);
-                box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
-            }
-            button:disabled {
-                opacity: 0.6;
-                cursor: not-allowed;
-                transform: none;
-            }
-            .btn-sample {
-                background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-            }
-            .footer {
-                background: rgba(0,0,0,0.1);
-                color: white;
-                text-align: center;
-                padding: 20px;
-                margin-top: auto;
-            }
-            .footer a {
-                color: white;
-                text-decoration: none;
-                font-weight: 600;
-                border-bottom: 2px solid rgba(255,255,255,0.3);
-            }
-            .footer a:hover {
-                border-bottom-color: white;
-            }
-            .file-size-note {
-                font-size: 12px;
-                color: #718096;
-                margin-top: 5px;
-            }
-            #result {
-                margin-top: 30px;
-                padding: 20px;
-                border-radius: 8px;
-                background: #f7fafc;
-                display: none;
-            }
-            .success {
-                background: #c6f6d5;
-                border-left: 4px solid #38a169;
-            }
-            .error {
-                background: #fed7d7;
-                border-left: 4px solid #e53e3e;
-            }
-            pre {
-                background: #2d3748;
-                color: #e2e8f0;
-                padding: 15px;
-                border-radius: 6px;
-                overflow-x: auto;
-                margin-top: 10px;
-                font-size: 12px;
-            }
-            .download-link {
-                display: inline-block;
-                margin-top: 15px;
-                padding: 10px 20px;
-                background: #38a169;
-                color: white;
-                text-decoration: none;
-                border-radius: 6px;
-                font-weight: 600;
-            }
-            .download-link:hover {
-                background: #2f855a;
-            }
-            .info-box {
-                background: #ebf8ff;
-                border-left: 4px solid #3182ce;
-                padding: 15px;
-                margin-bottom: 20px;
-                border-radius: 4px;
-                font-size: 14px;
-            }
-            .loader {
-                border: 3px solid #f3f3f3;
-                border-top: 3px solid #667eea;
-                border-radius: 50%;
-                width: 40px;
-                height: 40px;
-                animation: spin 1s linear infinite;
-                margin: 20px auto;
-                display: none;
-            }
-            @keyframes spin {
-                0% { transform: rotate(0deg); }
-                100% { transform: rotate(360deg); }
-            }
-        </style>
-    </head>
-    <body>
-        <div class="banner">
-            <strong>Excel Data Processing Demo</strong> — Automated cleaning, deduplication, transformation with configurable rules
-        </div>
-        
-        <div class="container">
-            <h1>📊 Excel Data Processing</h1>
-            <p class="subtitle">Automated cleaning, deduplication, and transformation pipeline</p>
-            
-            <div class="info-box">
-                <strong>Pipeline steps:</strong> Clean empty rows → Remove duplicates → Transform fields → Apply business rules → Generate report
-            </div>
-            
+    main_html = f"""
             <form id="uploadForm" enctype="multipart/form-data">
-                <div class="upload-section">
-                    <label style="font-weight: 600; color: #2d3748; display: block; margin-bottom: 10px;">
-                        📁 Upload Excel/CSV File
+                <div class="upload-zone" id="uploadZone">
+                    {UPLOAD_ICON_SVG}
+                    <p class="upload-title">Upload Excel or CSV</p>
+                    <p class="upload-hint">Single file · Max 10MB</p>
+                    <label class="btn-file">
+                        <input type="file" name="file" id="fileInput" accept=".xlsx,.xls,.csv">
+                        Choose file
                     </label>
-                    <input type="file" name="file" id="fileInput" accept=".xlsx,.xls,.csv">
-                    <div class="file-size-note">Maximum file size: 10MB</div>
+                    <p class="file-selected" id="fileName" aria-live="polite"></p>
                 </div>
-                
-                <label style="font-weight: 600; color: #2d3748; display: block; margin-bottom: 10px;">
-                    ⚙️ Processing Rules (Optional JSON)
-                </label>
-                <textarea name="rules" id="rulesInput" placeholder='{
+
+                <label class="section-label" for="rulesInput">Processing rules (optional JSON)</label>
+                <textarea name="rules" id="rulesInput" placeholder='{{
   "dedupe_columns": ["email"],
-  "transformations": {
+  "transformations": {{
     "name": "title",
     "email": "lowercase"
-  },
-  "filters": {
-    "age": {"min_value": 18}
-  }
-}'></textarea>
-                
-                <div class="button-group">
-                    <button type="submit" id="submitBtn">Process Uploaded File</button>
-                    <button type="button" class="btn-sample" id="sampleBtn" onclick="processSample()">🎯 Try with Sample Data</button>
+  }},
+  "filters": {{
+    "age": {{"min_value": 18}}
+  }}
+}}'></textarea>
+
+                <div class="actions">
+                    <button type="submit" class="btn btn-primary" id="submitBtn">Process uploaded file</button>
+                    <button type="button" class="btn btn-secondary" id="sampleBtn">Try sample data</button>
                 </div>
             </form>
-            
+
             <div class="loader" id="loader"></div>
-            
             <div id="result"></div>
-        </div>
-        
-        <div class="footer">
-            View source code on <a href="https://github.com/Lt-wei/ai-solutions-portfolio" target="_blank">GitHub</a>
-        </div>
-        
-        <script>
-            document.getElementById('uploadForm').addEventListener('submit', async (e) => {
-                e.preventDefault();
-                
+
+            <script>
+            (function() {{
                 const fileInput = document.getElementById('fileInput');
-                if (!fileInput.files[0]) {
-                    alert('Please select a file to upload');
-                    return;
-                }
-                
-                // Check file size (10MB limit for serverless)
-                if (fileInput.files[0].size > 10 * 1024 * 1024) {
-                    alert('File size exceeds 10MB limit. Please use a smaller file.');
-                    return;
-                }
-                
-                const submitBtn = document.getElementById('submitBtn');
-                const sampleBtn = document.getElementById('sampleBtn');
-                const loader = document.getElementById('loader');
-                const resultDiv = document.getElementById('result');
-                
-                submitBtn.disabled = true;
-                sampleBtn.disabled = true;
-                loader.style.display = 'block';
-                resultDiv.style.display = 'none';
-                
-                const formData = new FormData();
-                const rulesInput = document.getElementById('rulesInput');
-                
-                formData.append('file', fileInput.files[0]);
-                if (rulesInput.value.trim()) {
-                    formData.append('rules', rulesInput.value);
-                }
-                
-                try {
-                    const response = await fetch('/process', {
-                        method: 'POST',
-                        body: formData
-                    });
-                    
-                    const data = await response.json();
-                    
-                    if (response.ok) {
-                        resultDiv.className = 'success';
-                        resultDiv.innerHTML = `
-                            <h3 style="color: #38a169; margin-bottom: 15px;">✅ Processing Complete!</h3>
-                            <p><strong>Processed:</strong> ${data.report.original_rows} → ${data.report.final_rows} rows</p>
-                            <p><strong>Time:</strong> ${data.processing_time.toFixed(3)}s</p>
-                            <pre>${JSON.stringify(data.report, null, 2)}</pre>
-                            <a href="/download/${data.output_file}" class="download-link" download>📥 Download Processed Excel</a>
-                            <a href="/download/${data.report_file}" class="download-link" download style="background: #3182ce; margin-left: 10px;">📄 Download Report</a>
-                        `;
-                    } else {
-                        throw new Error(data.detail || 'Processing failed');
-                    }
-                } catch (error) {
-                    resultDiv.className = 'error';
-                    resultDiv.innerHTML = `
-                        <h3 style="color: #e53e3e; margin-bottom: 10px;">❌ Error</h3>
-                        <p>${error.message}</p>
-                    `;
-                }
-                
-                resultDiv.style.display = 'block';
-                submitBtn.disabled = false;
-                sampleBtn.disabled = false;
-                loader.style.display = 'none';
-            });
-            
-            async function processSample() {
-                const submitBtn = document.getElementById('submitBtn');
-                const sampleBtn = document.getElementById('sampleBtn');
-                const loader = document.getElementById('loader');
-                const resultDiv = document.getElementById('result');
-                
-                submitBtn.disabled = true;
-                sampleBtn.disabled = true;
-                loader.style.display = 'block';
-                resultDiv.style.display = 'none';
-                
-                try {
-                    const response = await fetch('/sample');
-                    const data = await response.json();
-                    
-                    if (response.ok) {
-                        resultDiv.className = 'success';
-                        resultDiv.innerHTML = `
-                            <h3 style="color: #38a169; margin-bottom: 15px;">✅ Sample Processing Complete!</h3>
-                            <p><strong>Processed:</strong> ${data.report.original_rows} → ${data.report.final_rows} rows</p>
-                            <p><strong>Time:</strong> ${data.processing_time.toFixed(3)}s</p>
-                            <pre>${JSON.stringify(data.report, null, 2)}</pre>
-                            <a href="/download/${data.output_file}" class="download-link" download>📥 Download Processed Excel</a>
-                            <a href="/download/${data.report_file}" class="download-link" download style="background: #3182ce; margin-left: 10px;">📄 Download Report</a>
-                        `;
-                    } else {
-                        throw new Error(data.detail || 'Sample processing failed');
-                    }
-                } catch (error) {
-                    resultDiv.className = 'error';
-                    resultDiv.innerHTML = `
-                        <h3 style="color: #e53e3e; margin-bottom: 10px;">❌ Error</h3>
-                        <p>${error.message}</p>
-                    `;
-                }
-                
-                resultDiv.style.display = 'block';
-                submitBtn.disabled = false;
-                sampleBtn.disabled = false;
-                loader.style.display = 'none';
-            }
-        </script>
-    </body>
-    </html>
+                const fileName = document.getElementById('fileName');
+                const zone = document.getElementById('uploadZone');
+
+                fileInput.addEventListener('change', () => {{
+                    const f = fileInput.files[0];
+                    fileName.textContent = f ? 'Selected: ' + f.name : '';
+                }});
+
+                ['dragenter', 'dragover'].forEach(ev => zone.addEventListener(ev, e => {{
+                    e.preventDefault();
+                    zone.classList.add('is-dragover');
+                }}));
+                ['dragleave', 'drop'].forEach(ev => zone.addEventListener(ev, e => {{
+                    e.preventDefault();
+                    zone.classList.remove('is-dragover');
+                }}));
+                zone.addEventListener('drop', e => {{
+                    if (e.dataTransfer.files.length) {{
+                        fileInput.files = e.dataTransfer.files;
+                        fileInput.dispatchEvent(new Event('change'));
+                    }}
+                }});
+
+                function renderSuccess(data, title) {{
+                    return `
+                        <p class="result-title success">${{title}}</p>
+                        <p><strong>Rows:</strong> ${{data.report.original_rows}} → ${{data.report.final_rows}}</p>
+                        <p><strong>Time:</strong> ${{data.processing_time.toFixed(3)}}s</p>
+                        <pre class="result-json">${{JSON.stringify(data.report, null, 2)}}</pre>
+                        <div class="download-row">
+                            <a href="/download/${{data.output_file}}" class="download-link" download>Download Excel</a>
+                            <a href="/download/${{data.report_file}}" class="download-link alt" download>Download report</a>
+                        </div>`;
+                }}
+
+                function renderError(msg) {{
+                    return `<p class="result-title error">Processing failed</p><p>${{msg}}</p>`;
+                }}
+
+                async function runRequest(url, options, successTitle) {{
+                    const submitBtn = document.getElementById('submitBtn');
+                    const sampleBtn = document.getElementById('sampleBtn');
+                    const loader = document.getElementById('loader');
+                    const resultDiv = document.getElementById('result');
+
+                    submitBtn.disabled = true;
+                    sampleBtn.disabled = true;
+                    loader.style.display = 'block';
+                    resultDiv.style.display = 'none';
+
+                    try {{
+                        const response = await fetch(url, options);
+                        const data = await response.json();
+                        if (response.ok) {{
+                            resultDiv.className = 'success';
+                            resultDiv.innerHTML = renderSuccess(data, successTitle);
+                        }} else {{
+                            throw new Error(data.detail || 'Processing failed');
+                        }}
+                    }} catch (error) {{
+                        resultDiv.className = 'error';
+                        resultDiv.innerHTML = renderError(error.message);
+                    }}
+
+                    resultDiv.style.display = 'block';
+                    submitBtn.disabled = false;
+                    sampleBtn.disabled = false;
+                    loader.style.display = 'none';
+                }}
+
+                document.getElementById('uploadForm').addEventListener('submit', async (e) => {{
+                    e.preventDefault();
+                    const fileInput = document.getElementById('fileInput');
+                    if (!fileInput.files[0]) {{
+                        alert('Please choose a file to upload.');
+                        return;
+                    }}
+                    if (fileInput.files[0].size > 10 * 1024 * 1024) {{
+                        alert('File size exceeds the 10MB limit.');
+                        return;
+                    }}
+                    const formData = new FormData();
+                    const rulesInput = document.getElementById('rulesInput');
+                    formData.append('file', fileInput.files[0]);
+                    if (rulesInput.value.trim()) formData.append('rules', rulesInput.value);
+                    await runRequest('/process', {{ method: 'POST', body: formData }}, 'Processing complete');
+                }});
+
+                document.getElementById('sampleBtn').addEventListener('click', () =>
+                    runRequest('/sample', {{}}, 'Sample run complete')
+                );
+            }})();
+            </script>
     """
+
+    return demo_page(
+        page_title="Excel Data Processing — Leane",
+        product_title="Excel Data Processing",
+        value_prop="Automated cleaning, deduplication, and transformation for spreadsheet workflows.",
+        badge_text=demo_badge(sample_only=True),
+        pipeline_html="Clean empty rows → deduplicate → transform fields → apply rules → export with report.",
+        main_html=main_html,
+    )
 
 
 @app.post("/process")

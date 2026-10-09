@@ -19,6 +19,8 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 
+from portfolio_ui import demo_page, demo_badge
+
 # Load environment
 load_dotenv()
 
@@ -296,399 +298,147 @@ app = FastAPI(
 @app.get("/", response_class=HTMLResponse)
 async def root():
     """Serve web UI"""
-    ai_badge = "🟢 AI Active" if OPENAI_AVAILABLE else "🟡 Demo Mode"
-    ai_color = "#c6f6d5" if OPENAI_AVAILABLE else "#fef3c7"
-    ai_text_color = "#22543d" if OPENAI_AVAILABLE else "#78350f"
-    
-    return f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>OpenAI Inquiry Automation</title>
-        <style>
-            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            body {{
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                min-height: 100vh;
-                display: flex;
-                flex-direction: column;
-            }}
-            .banner {{
-                background: #1a202c;
-                color: white;
-                padding: 12px 20px;
-                text-align: center;
-                font-size: 14px;
-            }}
-            .banner strong {{ color: #fbbf24; }}
-            .container {{
-                max-width: 900px;
-                margin: 20px auto;
-                background: white;
-                border-radius: 16px;
-                padding: 40px;
-                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-                flex: 1;
-            }}
-            .footer {{
-                background: rgba(0,0,0,0.1);
-                color: white;
-                text-align: center;
-                padding: 20px;
-                margin-top: auto;
-            }}
-            .footer a {{
-                color: white;
-                text-decoration: none;
-                font-weight: 600;
-                border-bottom: 2px solid rgba(255,255,255,0.3);
-            }}
-            .footer a:hover {{
-                border-bottom-color: white;
-            }}
-            h1 {{
-                color: #2d3748;
-                margin-bottom: 10px;
-                font-size: 32px;
-            }}
-            .subtitle {{
-                color: #718096;
-                margin-bottom: 20px;
-                font-size: 16px;
-            }}
-            .status-badge {{
-                display: inline-block;
-                padding: 8px 16px;
-                background: {ai_color};
-                color: {ai_text_color};
-                border-radius: 20px;
-                font-size: 14px;
-                font-weight: 600;
-                margin-bottom: 20px;
-            }}
-            .info-box {{
-                background: #ebf8ff;
-                border-left: 4px solid #3182ce;
-                padding: 15px;
-                margin-bottom: 20px;
-                border-radius: 4px;
-                font-size: 14px;
-            }}
-            .form-group {{
-                margin-bottom: 20px;
-            }}
-            label {{
-                display: block;
-                font-weight: 600;
-                color: #2d3748;
-                margin-bottom: 8px;
-            }}
-            input, textarea {{
-                width: 100%;
-                padding: 12px;
-                border: 1px solid #e2e8f0;
-                border-radius: 8px;
-                font-size: 14px;
-                font-family: inherit;
-            }}
-            textarea {{
-                min-height: 120px;
-                resize: vertical;
-            }}
-            button {{
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                padding: 14px 32px;
-                border: none;
-                border-radius: 8px;
-                font-size: 16px;
-                font-weight: 600;
-                cursor: pointer;
-                transition: transform 0.2s, box-shadow 0.2s;
-                width: 100%;
-            }}
-            button:hover {{
-                transform: translateY(-2px);
-                box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
-            }}
-            button:disabled {{
-                opacity: 0.6;
-                cursor: not-allowed;
-                transform: none;
-            }}
-            #result {{
-                margin-top: 30px;
-                padding: 20px;
-                border-radius: 8px;
-                background: #f7fafc;
-                display: none;
-            }}
-            .success {{
-                background: #c6f6d5;
-                border-left: 4px solid #38a169;
-            }}
-            .error {{
-                background: #fed7d7;
-                border-left: 4px solid #e53e3e;
-            }}
-            .result-field {{
-                margin: 10px 0;
-                padding: 10px;
-                background: white;
-                border-radius: 4px;
-            }}
-            .result-label {{
-                font-weight: 600;
-                color: #4a5568;
-                font-size: 12px;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-            }}
-            .result-value {{
-                color: #2d3748;
-                margin-top: 5px;
-                font-size: 15px;
-            }}
-            .stats-link {{
-                display: inline-block;
-                margin-top: 15px;
-                padding: 10px 20px;
-                background: #3182ce;
-                color: white;
-                text-decoration: none;
-                border-radius: 6px;
-                font-weight: 600;
-            }}
-            .stats-link:hover {{
-                background: #2c5aa0;
-            }}
-            .loader {{
-                border: 3px solid #f3f3f3;
-                border-top: 3px solid #667eea;
-                border-radius: 50%;
-                width: 40px;
-                height: 40px;
-                animation: spin 1s linear infinite;
-                margin: 20px auto;
-                display: none;
-            }}
-            @keyframes spin {{
-                0% {{ transform: rotate(0deg); }}
-                100% {{ transform: rotate(360deg); }}
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="banner">
-            <strong>Inquiry Automation Demo</strong> — AI-powered categorization, priority assignment, and automated responses{''' • Demo mode – AI responses are simulated using rule-based logic''' if not OPENAI_AVAILABLE else ''}
-        </div>
-        
-        <div class="container">
-            <h1>🤖 Inquiry Automation System</h1>
-            <p class="subtitle">AI-powered inquiry processing with intelligent categorization and response</p>
-            
-            <div class="status-badge">{ai_badge}</div>
-            
-            <div class="info-box">
-                <strong>System Pipeline:</strong> Submit inquiry → AI analysis → Categorization → Priority assignment → 
-                Database storage → Automated response → Notifications (Telegram/Email)
-            </div>
-            
+    notice = None
+    if not OPENAI_AVAILABLE:
+        notice = (
+            "Responses and classification use rule-based mock logic when no API key is set. "
+            "Add <code>OPENAI_API_KEY</code> for live OpenAI processing."
+        )
+
+    badge = demo_badge(mock_ai=not OPENAI_AVAILABLE, openai_active=OPENAI_AVAILABLE)
+
+    main_html = """
             <form id="inquiryForm">
                 <div class="form-group">
-                    <label>📝 Your Inquiry</label>
-                    <textarea 
-                        id="inquiryText" 
-                        placeholder="Describe your question, issue, or request here..."
+                    <label class="section-label" for="inquiryText">Your inquiry</label>
+                    <textarea
+                        id="inquiryText"
+                        placeholder="Describe your question, issue, or request..."
+                        required
+                        minlength="10"
                     ></textarea>
                 </div>
-                
+
                 <div class="form-group">
-                    <label>👤 Your Name (optional)</label>
-                    <input type="text" id="userName" placeholder="John Doe">
+                    <label class="section-label" for="userName">Name (optional)</label>
+                    <input type="text" id="userName" placeholder="Jane Doe" autocomplete="name">
                 </div>
-                
+
                 <div class="form-group">
-                    <label>📧 Your Email (optional)</label>
-                    <input type="email" id="userEmail" placeholder="john@example.com">
+                    <label class="section-label" for="userEmail">Email (optional)</label>
+                    <input type="email" id="userEmail" placeholder="jane@example.com" autocomplete="email">
                 </div>
-                
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                    <button type="submit" id="submitBtn">Submit Custom Inquiry</button>
-                    <button type="button" onclick="loadSampleInquiry()" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">🎯 Try Sample Inquiry</button>
+
+                <div class="actions">
+                    <button type="submit" class="btn btn-primary" id="submitBtn">Submit inquiry</button>
+                    <button type="button" class="btn btn-secondary" id="sampleBtn">Try sample inquiry</button>
                 </div>
             </form>
-            
+
             <div class="loader" id="loader"></div>
-            
             <div id="result"></div>
-            
-            <div style="text-align: center; margin-top: 30px;">
-                <a href="/stats" class="stats-link">📊 View All Inquiries</a>
-            </div>
-        </div>
-        
-        <div class="footer">
-            View source code on <a href="https://github.com/Lt-wei/ai-solutions-portfolio" target="_blank">GitHub</a>
-        </div>
-        
-        <script>
-            document.getElementById('inquiryForm').addEventListener('submit', async (e) => {{
-                e.preventDefault();
-                
-                const submitBtn = document.getElementById('submitBtn');
-                const loader = document.getElementById('loader');
-                const resultDiv = document.getElementById('result');
-                
-                submitBtn.disabled = true;
-                loader.style.display = 'block';
-                resultDiv.style.display = 'none';
-                
-                const inquiry = {{
-                    inquiry_text: document.getElementById('inquiryText').value,
-                    user_name: document.getElementById('userName').value || null,
-                    user_email: document.getElementById('userEmail').value || null
-                }};
-                
-                try {{
-                    const response = await fetch('/submit', {{
+
+            <a href="/stats" class="link-quiet">View inquiry log (JSON)</a>
+
+            <script>
+            (function() {
+                function renderResult(data, title) {
+                    return `
+                        <p class="result-title success">${title}</p>
+                        <div class="result-field">
+                            <div class="result-label">Inquiry ID</div>
+                            <div class="result-value">#${data.id}</div>
+                        </div>
+                        <div class="result-field">
+                            <div class="result-label">Category</div>
+                            <div class="result-value">${data.category}</div>
+                        </div>
+                        <div class="result-field">
+                            <div class="result-label">Priority</div>
+                            <div class="result-value">${data.priority}</div>
+                        </div>
+                        <div class="result-field">
+                            <div class="result-label">Sentiment</div>
+                            <div class="result-value">${data.sentiment}</div>
+                        </div>
+                        <div class="result-field">
+                            <div class="result-label">Suggested response</div>
+                            <div class="result-value">${data.ai_response}</div>
+                        </div>
+                        <div class="result-field">
+                            <div class="result-label">Confidence</div>
+                            <div class="result-value">${(data.confidence_score * 100).toFixed(0)}%</div>
+                        </div>
+                        <p class="meta-line">Method: ${data.processing_method}</p>`;
+                }
+
+                async function run(url, options, successTitle, resetForm) {
+                    const submitBtn = document.getElementById('submitBtn');
+                    const sampleBtn = document.getElementById('sampleBtn');
+                    const loader = document.getElementById('loader');
+                    const resultDiv = document.getElementById('result');
+
+                    submitBtn.disabled = true;
+                    sampleBtn.disabled = true;
+                    loader.style.display = 'block';
+                    resultDiv.style.display = 'none';
+
+                    try {
+                        const response = await fetch(url, options);
+                        const data = await response.json();
+                        if (response.ok) {
+                            resultDiv.className = 'success';
+                            resultDiv.innerHTML = renderResult(data, successTitle);
+                            if (resetForm) document.getElementById('inquiryForm').reset();
+                        } else {
+                            throw new Error(data.detail || 'Submission failed');
+                        }
+                    } catch (error) {
+                        resultDiv.className = 'error';
+                        resultDiv.innerHTML = `<p class="result-title error">Request failed</p><p>${error.message}</p>`;
+                    }
+
+                    resultDiv.style.display = 'block';
+                    submitBtn.disabled = false;
+                    sampleBtn.disabled = false;
+                    loader.style.display = 'none';
+                }
+
+                document.getElementById('inquiryForm').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const text = document.getElementById('inquiryText').value.trim();
+                    if (text.length < 10) {
+                        alert('Please enter at least 10 characters.');
+                        return;
+                    }
+                    const inquiry = {
+                        inquiry_text: text,
+                        user_name: document.getElementById('userName').value || null,
+                        user_email: document.getElementById('userEmail').value || null
+                    };
+                    await run('/submit', {
                         method: 'POST',
-                        headers: {{'Content-Type': 'application/json'}},
+                        headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify(inquiry)
-                    }});
-                    
-                    const data = await response.json();
-                    
-                    if (response.ok) {{
-                        resultDiv.className = 'success';
-                        resultDiv.innerHTML = `
-                            <h3 style="color: #38a169; margin-bottom: 15px;">✅ Inquiry Submitted Successfully!</h3>
-                            
-                            <div class="result-field">
-                                <div class="result-label">Inquiry ID</div>
-                                <div class="result-value">#${{data.id}}</div>
-                            </div>
-                            
-                            <div class="result-field">
-                                <div class="result-label">Category</div>
-                                <div class="result-value">${{data.category.toUpperCase()}}</div>
-                            </div>
-                            
-                            <div class="result-field">
-                                <div class="result-label">Priority</div>
-                                <div class="result-value">${{data.priority.toUpperCase()}}</div>
-                            </div>
-                            
-                            <div class="result-field">
-                                <div class="result-label">Sentiment</div>
-                                <div class="result-value">${{data.sentiment.toUpperCase()}}</div>
-                            </div>
-                            
-                            <div class="result-field">
-                                <div class="result-label">AI Response</div>
-                                <div class="result-value">${{data.ai_response}}</div>
-                            </div>
-                            
-                            <div class="result-field">
-                                <div class="result-label">Confidence Score</div>
-                                <div class="result-value">${{(data.confidence_score * 100).toFixed(0)}}%</div>
-                            </div>
-                            
-                            <p style="margin-top: 15px; color: #4a5568; font-size: 14px;">
-                                Processing method: ${{data.processing_method}}
-                            </p>
-                        `;
-                        
-                        // Reset form
-                        document.getElementById('inquiryForm').reset();
-                    }} else {{
-                        throw new Error(data.detail || 'Submission failed');
-                    }}
-                }} catch (error) {{
-                    resultDiv.className = 'error';
-                    resultDiv.innerHTML = `
-                        <h3 style="color: #e53e3e; margin-bottom: 10px;">❌ Error</h3>
-                        <p>${{error.message}}</p>
-                    `;
-                }}
-                
-                resultDiv.style.display = 'block';
-                submitBtn.disabled = false;
-                loader.style.display = 'none';
-            }});
-            
-            async function loadSampleInquiry() {{
-                const submitBtn = document.getElementById('submitBtn');
-                const loader = document.getElementById('loader');
-                const resultDiv = document.getElementById('result');
-                
-                submitBtn.disabled = true;
-                loader.style.display = 'block';
-                resultDiv.style.display = 'none';
-                
-                try {{
-                    const response = await fetch('/sample');
-                    const data = await response.json();
-                    
-                    if (response.ok) {{
-                        resultDiv.className = 'success';
-                        resultDiv.innerHTML = `
-                            <h3 style="color: #38a169; margin-bottom: 15px;">✅ Sample Inquiry Processed!</h3>
-                            
-                            <div class="result-field">
-                                <div class="result-label">Inquiry ID</div>
-                                <div class="result-value">#${{data.id}}</div>
-                            </div>
-                            
-                            <div class="result-field">
-                                <div class="result-label">Category</div>
-                                <div class="result-value">${{data.category.toUpperCase()}}</div>
-                            </div>
-                            
-                            <div class="result-field">
-                                <div class="result-label">Priority</div>
-                                <div class="result-value">${{data.priority.toUpperCase()}}</div>
-                            </div>
-                            
-                            <div class="result-field">
-                                <div class="result-label">Sentiment</div>
-                                <div class="result-value">${{data.sentiment.toUpperCase()}}</div>
-                            </div>
-                            
-                            <div class="result-field">
-                                <div class="result-label">AI Response</div>
-                                <div class="result-value">${{data.ai_response}}</div>
-                            </div>
-                            
-                            <div class="result-field">
-                                <div class="result-label">Confidence Score</div>
-                                <div class="result-value">${{(data.confidence_score * 100).toFixed(0)}}%</div>
-                            </div>
-                            
-                            <p style="margin-top: 15px; color: #4a5568; font-size: 14px;">
-                                Processing method: ${{data.processing_method}}
-                            </p>
-                        `;
-                    }} else {{
-                        throw new Error(data.detail || 'Sample processing failed');
-                    }}
-                }} catch (error) {{
-                    resultDiv.className = 'error';
-                    resultDiv.innerHTML = `
-                        <h3 style="color: #e53e3e; margin-bottom: 10px;">❌ Error</h3>
-                        <p>${{error.message}}</p>
-                    `;
-                }}
-                
-                resultDiv.style.display = 'block';
-                submitBtn.disabled = false;
-                loader.style.display = 'none';
-            }}
-        </script>
-    </body>
-    </html>
+                    }, 'Inquiry processed', true);
+                });
+
+                document.getElementById('sampleBtn').addEventListener('click', () =>
+                    run('/sample', {}, 'Sample inquiry processed', false)
+                );
+            })();
+            </script>
     """
+
+    return demo_page(
+        page_title="Inquiry Automation — Leane",
+        product_title="Inquiry Automation",
+        value_prop="Categorize customer inquiries, assign priority, and draft responses with optional notifications.",
+        badge_text=badge,
+        pipeline_html="Submit → analyze → categorize → store → respond → notify (Telegram/email stubs).",
+        notice_html=notice,
+        main_html=main_html,
+    )
 
 
 @app.post("/submit", response_model=InquiryResponse)

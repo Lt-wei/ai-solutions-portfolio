@@ -18,6 +18,8 @@ from pydantic import BaseModel, Field
 from PyPDF2 import PdfReader
 from dotenv import load_dotenv
 
+from portfolio_ui import demo_page, demo_badge, UPLOAD_ICON_SVG
+
 # Load environment variables
 load_dotenv()
 
@@ -241,421 +243,151 @@ Return ONLY valid JSON with these exact field names. If a field cannot be found,
 @app.get("/", response_class=HTMLResponse)
 async def root():
     """Serve web UI"""
-    ai_status = "🟢 OpenAI Active" if OPENAI_AVAILABLE else "🟡 Demo Mode (No API Key)"
-    
-    return f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>PDF Document AI - Contract Extractor</title>
-        <style>
-            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            body {{
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-                background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-                min-height: 100vh;
-                display: flex;
-                flex-direction: column;
-            }}
-            .banner {{
-                background: #1a202c;
-                color: white;
-                padding: 12px 20px;
-                text-align: center;
-                font-size: 14px;
-            }}
-            .banner strong {{ color: #fbbf24; }}
-            .container {{
-                max-width: 900px;
-                margin: 20px auto;
-                background: white;
-                border-radius: 16px;
-                padding: 40px;
-                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-                flex: 1;
-            }}
-            h1 {{
-                color: #2d3748;
-                margin-bottom: 10px;
-                font-size: 32px;
-            }}
-            .subtitle {{
-                color: #718096;
-                margin-bottom: 20px;
-                font-size: 16px;
-            }}
-            .status-badge {{
-                display: inline-block;
-                padding: 8px 16px;
-                background: {"#c6f6d5" if OPENAI_AVAILABLE else "#fef3c7"};
-                color: {"#22543d" if OPENAI_AVAILABLE else "#78350f"};
-                border-radius: 20px;
-                font-size: 14px;
-                font-weight: 600;
-                margin-bottom: 20px;
-            }}
-            .info-box {{
-                background: #ebf8ff;
-                border-left: 4px solid #3182ce;
-                padding: 15px;
-                margin-bottom: 20px;
-                border-radius: 4px;
-                font-size: 14px;
-            }}
-            .upload-section {{
-                border: 2px dashed #cbd5e0;
-                border-radius: 12px;
-                padding: 40px;
-                text-align: center;
-                margin-bottom: 20px;
-                transition: all 0.3s;
-            }}
-            .upload-section:hover {{
-                border-color: #3182ce;
-                background: #f7fafc;
-            }}
-            input[type="file"] {{
-                margin: 15px 0;
-                padding: 10px;
-            }}
-            .button-group {{
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 10px;
-                margin-top: 20px;
-            }}
-            button {{
-                background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-                color: white;
-                padding: 14px 32px;
-                border: none;
-                border-radius: 8px;
-                font-size: 16px;
-                font-weight: 600;
-                cursor: pointer;
-                transition: transform 0.2s, box-shadow 0.2s;
-            }}
-            button:hover {{
-                transform: translateY(-2px);
-                box-shadow: 0 10px 30px rgba(30, 60, 114, 0.4);
-            }}
-            button:disabled {{
-                opacity: 0.6;
-                cursor: not-allowed;
-                transform: none;
-            }}
-            .btn-sample {{
-                background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-            }}
-            .footer {{
-                background: rgba(0,0,0,0.1);
-                color: white;
-                text-align: center;
-                padding: 20px;
-                margin-top: auto;
-            }}
-            .footer a {{
-                color: white;
-                text-decoration: none;
-                font-weight: 600;
-                border-bottom: 2px solid rgba(255,255,255,0.3);
-            }}
-            .footer a:hover {{
-                border-bottom-color: white;
-            }}
-            .file-size-note {{
-                font-size: 12px;
-                color: #718096;
-                margin-top: 5px;
-            }}
-            #result {{
-                margin-top: 30px;
-                padding: 20px;
-                border-radius: 8px;
-                background: #f7fafc;
-                display: none;
-            }}
-            .success {{
-                background: #c6f6d5;
-                border-left: 4px solid #38a169;
-            }}
-            .error {{
-                background: #fed7d7;
-                border-left: 4px solid #e53e3e;
-            }}
-            table {{
-                width: 100%;
-                border-collapse: collapse;
-                margin-top: 15px;
-                background: white;
-            }}
-            th, td {{
-                padding: 12px;
-                text-align: left;
-                border-bottom: 1px solid #e2e8f0;
-            }}
-            th {{
-                background: #edf2f7;
-                font-weight: 600;
-                color: #2d3748;
-            }}
-            .download-link {{
-                display: inline-block;
-                margin-top: 15px;
-                padding: 10px 20px;
-                background: #38a169;
-                color: white;
-                text-decoration: none;
-                border-radius: 6px;
-                font-weight: 600;
-            }}
-            .download-link:hover {{
-                background: #2f855a;
-            }}
-            .loader {{
-                border: 3px solid #f3f3f3;
-                border-top: 3px solid #3182ce;
-                border-radius: 50%;
-                width: 40px;
-                height: 40px;
-                animation: spin 1s linear infinite;
-                margin: 20px auto;
-                display: none;
-            }}
-            @keyframes spin {{
-                0% {{ transform: rotate(0deg); }}
-                100% {{ transform: rotate(360deg); }}
-            }}
-            .sample-files {{
-                background: #fef3c7;
-                border-left: 4px solid #f59e0b;
-                padding: 15px;
-                margin-bottom: 20px;
-                border-radius: 4px;
-                font-size: 14px;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="banner">
-            <strong>PDF Document AI Demo</strong> — Extract structured contract data from PDFs with AI + regex fallback{''' • Demo mode – AI responses are simulated using heuristic patterns''' if not OPENAI_AVAILABLE else ''}
-        </div>
-        
-        <div class="container">
-            <h1>📄 PDF Document AI</h1>
-            <p class="subtitle">AI-powered contract data extraction to structured Excel</p>
-            
-            <div class="status-badge">{ai_status}</div>
-            
-            <div class="info-box">
-                <strong>Extraction Pipeline:</strong> PDF → Text extraction → AI analysis (or heuristic fallback) → Structured data → Excel output
-            </div>
-            
-            {'''<div class="sample-files">
-                <strong>💡 Demo Mode:</strong> No OpenAI API key detected. Using intelligent regex/heuristic extraction. 
-                Add OPENAI_API_KEY environment variable for AI-powered extraction with higher accuracy.
-            </div>''' if not OPENAI_AVAILABLE else ''}
-            
+    notice = None
+    if not OPENAI_AVAILABLE:
+        notice = (
+            "No OpenAI API key is configured. Extraction uses regex and heuristic patterns "
+            "so you can try the demo safely. Set <code>OPENAI_API_KEY</code> to enable live AI extraction."
+        )
+
+    badge = demo_badge(mock_ai=not OPENAI_AVAILABLE, openai_active=OPENAI_AVAILABLE)
+
+    main_html = f"""
             <form id="uploadForm" enctype="multipart/form-data">
-                <div class="upload-section">
-                    <label style="font-weight: 600; color: #2d3748; display: block; margin-bottom: 10px;">
-                        📎 Upload PDF Files (single or multiple)
+                <div class="upload-zone" id="uploadZone">
+                    {UPLOAD_ICON_SVG}
+                    <p class="upload-title">Upload PDF contracts</p>
+                    <p class="upload-hint">One or more files · Max 10MB each</p>
+                    <label class="btn-file">
+                        <input type="file" name="files" id="fileInput" accept=".pdf" multiple>
+                        Choose files
                     </label>
-                    <input type="file" name="files" id="fileInput" accept=".pdf" multiple>
-                    <div class="file-size-note">Maximum file size per PDF: 10MB</div>
+                    <p class="file-selected" id="fileName" aria-live="polite"></p>
                 </div>
-                
-                <div class="button-group">
-                    <button type="submit" id="submitBtn">Extract from Uploaded PDFs</button>
-                    <button type="button" class="btn-sample" id="sampleBtn" onclick="processSample()">🎯 Try with Sample Contracts</button>
+
+                <div class="actions">
+                    <button type="submit" class="btn btn-primary" id="submitBtn">Extract from uploaded PDFs</button>
+                    <button type="button" class="btn btn-secondary" id="sampleBtn">Try sample contracts</button>
                 </div>
             </form>
-            
+
             <div class="loader" id="loader"></div>
-            
             <div id="result"></div>
-        </div>
-        
-        <div class="footer">
-            View source code on <a href="https://github.com/Lt-wei/ai-solutions-portfolio" target="_blank">GitHub</a>
-        </div>
-        
-        <script>
-            document.getElementById('uploadForm').addEventListener('submit', async (e) => {{
-                e.preventDefault();
-                
+
+            <script>
+            (function() {{
                 const fileInput = document.getElementById('fileInput');
-                if (!fileInput.files.length) {{
-                    alert('Please select at least one PDF file');
-                    return;
+                const fileName = document.getElementById('fileName');
+                const zone = document.getElementById('uploadZone');
+
+                fileInput.addEventListener('change', () => {{
+                    const n = fileInput.files.length;
+                    if (!n) {{ fileName.textContent = ''; return; }}
+                    if (n === 1) fileName.textContent = 'Selected: ' + fileInput.files[0].name;
+                    else fileName.textContent = n + ' files selected';
+                }});
+
+                function renderTable(data, title) {{
+                    const tableRows = data.contracts.map(c => `
+                        <tr>
+                            <td>${{c.contract_no}}</td>
+                            <td>${{c.company}}</td>
+                            <td>${{c.party_a}}</td>
+                            <td>${{c.party_b}}</td>
+                            <td>$${{c.amount.toLocaleString()}}</td>
+                            <td>${{c.date}}</td>
+                            <td>${{(c.confidence * 100).toFixed(0)}}%</td>
+                        </tr>`).join('');
+
+                    return `
+                        <p class="result-title success">${{title}}</p>
+                        <p><strong>Files processed:</strong> ${{data.total_files}}</p>
+                        <p><strong>Contracts:</strong> ${{data.contracts.length}}</p>
+                        <p><strong>Method:</strong> ${{data.contracts[0]?.extraction_method || 'N/A'}}</p>
+                        <p><strong>Time:</strong> ${{data.processing_time.toFixed(2)}}s</p>
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Contract</th>
+                                    <th>Company</th>
+                                    <th>Party A</th>
+                                    <th>Party B</th>
+                                    <th>Amount</th>
+                                    <th>Date</th>
+                                    <th>Conf.</th>
+                                </tr>
+                            </thead>
+                            <tbody>${{tableRows}}</tbody>
+                        </table>
+                        <div class="download-row">
+                            <a href="/download/${{data.output_file}}" class="download-link" download>Download Excel</a>
+                        </div>`;
                 }}
-                
-                // Check file sizes (10MB limit per file)
-                for (let file of fileInput.files) {{
-                    if (file.size > 10 * 1024 * 1024) {{
-                        alert(`File ${{file.name}} exceeds 10MB limit`);
+
+                async function run(url, options, successTitle) {{
+                    const submitBtn = document.getElementById('submitBtn');
+                    const sampleBtn = document.getElementById('sampleBtn');
+                    const loader = document.getElementById('loader');
+                    const resultDiv = document.getElementById('result');
+
+                    submitBtn.disabled = true;
+                    sampleBtn.disabled = true;
+                    loader.style.display = 'block';
+                    resultDiv.style.display = 'none';
+
+                    try {{
+                        const response = await fetch(url, options);
+                        const data = await response.json();
+                        if (response.ok) {{
+                            resultDiv.className = 'success';
+                            resultDiv.innerHTML = renderTable(data, successTitle);
+                        }} else {{
+                            throw new Error(data.detail || 'Extraction failed');
+                        }}
+                    }} catch (error) {{
+                        resultDiv.className = 'error';
+                        resultDiv.innerHTML = `<p class="result-title error">Extraction failed</p><p>${{error.message}}</p>`;
+                    }}
+
+                    resultDiv.style.display = 'block';
+                    submitBtn.disabled = false;
+                    sampleBtn.disabled = false;
+                    loader.style.display = 'none';
+                }}
+
+                document.getElementById('uploadForm').addEventListener('submit', async (e) => {{
+                    e.preventDefault();
+                    if (!fileInput.files.length) {{
+                        alert('Please choose at least one PDF.');
                         return;
                     }}
-                }}
-                
-                const submitBtn = document.getElementById('submitBtn');
-                const sampleBtn = document.getElementById('sampleBtn');
-                const loader = document.getElementById('loader');
-                const resultDiv = document.getElementById('result');
-                
-                submitBtn.disabled = true;
-                sampleBtn.disabled = true;
-                loader.style.display = 'block';
-                resultDiv.style.display = 'none';
-                
-                const formData = new FormData();
-                
-                for (let file of fileInput.files) {{
-                    formData.append('files', file);
-                }}
-                
-                try {{
-                    const response = await fetch('/extract', {{
-                        method: 'POST',
-                        body: formData
-                    }});
-                    
-                    const data = await response.json();
-                    
-                    if (response.ok) {{
-                        resultDiv.className = 'success';
-                        
-                        let tableRows = data.contracts.map(c => `
-                            <tr>
-                                <td>${{c.contract_no}}</td>
-                                <td>${{c.company}}</td>
-                                <td>${{c.party_a}}</td>
-                                <td>${{c.party_b}}</td>
-                                <td>$$${{c.amount.toLocaleString()}}</td>
-                                <td>${{c.date}}</td>
-                                <td>${{(c.confidence * 100).toFixed(0)}}%</td>
-                            </tr>
-                        `).join('');
-                        
-                        resultDiv.innerHTML = `
-                            <h3 style="color: #38a169; margin-bottom: 15px;">✅ Extraction Complete!</h3>
-                            <p><strong>Files processed:</strong> ${{data.total_files}}</p>
-                            <p><strong>Contracts extracted:</strong> ${{data.contracts.length}}</p>
-                            <p><strong>Method:</strong> ${{data.contracts[0]?.extraction_method || 'N/A'}}</p>
-                            <p><strong>Processing time:</strong> ${{data.processing_time.toFixed(2)}}s</p>
-                            
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Contract No</th>
-                                        <th>Company</th>
-                                        <th>Party A</th>
-                                        <th>Party B</th>
-                                        <th>Amount</th>
-                                        <th>Date</th>
-                                        <th>Confidence</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${{tableRows}}
-                                </tbody>
-                            </table>
-                            
-                            <a href="/download/${{data.output_file}}" class="download-link" download>📥 Download Excel File</a>
-                        `;
-                    }} else {{
-                        throw new Error(data.detail || 'Extraction failed');
+                    for (const file of fileInput.files) {{
+                        if (file.size > 10 * 1024 * 1024) {{
+                            alert('File exceeds 10MB: ' + file.name);
+                            return;
+                        }}
                     }}
-                }} catch (error) {{
-                    resultDiv.className = 'error';
-                    resultDiv.innerHTML = `
-                        <h3 style="color: #e53e3e; margin-bottom: 10px;">❌ Error</h3>
-                        <p>${{error.message}}</p>
-                    `;
-                }}
-                
-                resultDiv.style.display = 'block';
-                submitBtn.disabled = false;
-                sampleBtn.disabled = false;
-                loader.style.display = 'none';
-            }});
-            
-            async function processSample() {{
-                const submitBtn = document.getElementById('submitBtn');
-                const sampleBtn = document.getElementById('sampleBtn');
-                const loader = document.getElementById('loader');
-                const resultDiv = document.getElementById('result');
-                
-                submitBtn.disabled = true;
-                sampleBtn.disabled = true;
-                loader.style.display = 'block';
-                resultDiv.style.display = 'none';
-                
-                try {{
-                    const response = await fetch('/sample');
-                    const data = await response.json();
-                    
-                    if (response.ok) {{
-                        resultDiv.className = 'success';
-                        
-                        let tableRows = data.contracts.map(c => `
-                            <tr>
-                                <td>${{c.contract_no}}</td>
-                                <td>${{c.company}}</td>
-                                <td>${{c.party_a}}</td>
-                                <td>${{c.party_b}}</td>
-                                <td>$$${{c.amount.toLocaleString()}}</td>
-                                <td>${{c.date}}</td>
-                                <td>${{(c.confidence * 100).toFixed(0)}}%</td>
-                            </tr>
-                        `).join('');
-                        
-                        resultDiv.innerHTML = `
-                            <h3 style="color: #38a169; margin-bottom: 15px;">✅ Sample Processing Complete!</h3>
-                            <p><strong>Sample files processed:</strong> ${{data.total_files}}</p>
-                            <p><strong>Contracts extracted:</strong> ${{data.contracts.length}}</p>
-                            <p><strong>Method:</strong> ${{data.contracts[0]?.extraction_method || 'N/A'}}</p>
-                            <p><strong>Processing time:</strong> ${{data.processing_time.toFixed(2)}}s</p>
-                            
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Contract No</th>
-                                        <th>Company</th>
-                                        <th>Party A</th>
-                                        <th>Party B</th>
-                                        <th>Amount</th>
-                                        <th>Date</th>
-                                        <th>Confidence</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${{tableRows}}
-                                </tbody>
-                            </table>
-                            
-                            <a href="/download/${{data.output_file}}" class="download-link" download>📥 Download Excel File</a>
-                        `;
-                    }} else {{
-                        throw new Error(data.detail || 'Sample processing failed');
-                    }}
-                }} catch (error) {{
-                    resultDiv.className = 'error';
-                    resultDiv.innerHTML = `
-                        <h3 style="color: #e53e3e; margin-bottom: 10px;">❌ Error</h3>
-                        <p>${{error.message}}</p>
-                    `;
-                }}
-                
-                resultDiv.style.display = 'block';
-                submitBtn.disabled = false;
-                sampleBtn.disabled = false;
-                loader.style.display = 'none';
-            }}
-        </script>
-    </body>
-    </html>
+                    const formData = new FormData();
+                    for (const file of fileInput.files) formData.append('files', file);
+                    await run('/extract', {{ method: 'POST', body: formData }}, 'Extraction complete');
+                }});
+
+                document.getElementById('sampleBtn').addEventListener('click', () =>
+                    run('/sample', {{}}, 'Sample extraction complete')
+                );
+            }})();
+            </script>
     """
+
+    return demo_page(
+        page_title="PDF Document AI — Leane",
+        product_title="PDF Document AI",
+        value_prop="Extract structured contract fields from PDFs and export to Excel.",
+        badge_text=badge,
+        pipeline_html="PDF → text extraction → AI or heuristic parsing → structured rows → Excel export.",
+        notice_html=notice,
+        main_html=main_html,
+    )
 
 
 @app.post("/extract")
