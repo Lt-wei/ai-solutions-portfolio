@@ -13,7 +13,7 @@ from pathlib import Path
 import pandas as pd
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
-from portfolio_ui import dashboard_page, demo_badge, UPLOAD_ICON_SVG
+from portfolio_ui import dashboard_page, demo_badge, UPLOAD_ICON_SVG, sparkline_svg
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -166,12 +166,12 @@ async def root():
             <span class="step" id="stepExport">Export</span>
         </nav>
 
-        <div class="excel-status-bar" aria-label="Workbook status">
-            <div class="stat"><label>Total rows</label><strong id="kpiTotal">10,248</strong></div>
-            <div class="stat"><label>Cleaned</label><strong id="kpiCleaned">9,892</strong></div>
-            <div class="stat"><label>Duplicates removed</label><strong id="kpiDupes">312</strong></div>
-            <div class="stat"><label>Columns</label><strong id="kpiCols">12</strong></div>
-        </div>
+        <section class="kpi-strip" aria-label="Workbook status">
+            <div class="kpi-card"><span class="kpi-label">Total rows</span><div class="kpi-row"><span class="kpi-value" id="kpiTotal">10,248</span>{sparkline_svg()}</div></div>
+            <div class="kpi-card"><span class="kpi-label">Cleaned</span><div class="kpi-row"><span class="kpi-value" id="kpiCleaned">9,892</span>{sparkline_svg("2,10 8,7 14,8 20,5 26,6")}</div></div>
+            <div class="kpi-card"><span class="kpi-label">Duplicates removed</span><div class="kpi-row"><span class="kpi-value" id="kpiDupes">312</span>{sparkline_svg("2,12 9,9 16,10 22,4 26,5")}</div></div>
+            <div class="kpi-card"><span class="kpi-label">Columns</span><div class="kpi-row"><span class="kpi-value" id="kpiCols">12</span>{sparkline_svg("2,8 8,10 14,6 20,9 26,5")}</div></div>
+        </section>
 
         <div class="excel-layout">
             <section class="panel sheet-panel" id="previewPanel" aria-label="Workbook preview">
@@ -257,8 +257,12 @@ async def root():
             }}
 
             function setStepper(done) {{
-                ['stepClean','stepDedupe','stepTransform','stepExport'].forEach((id, i) => {{
-                    document.getElementById(id).classList.toggle('active', done || i === 0);
+                const ids = ['stepClean','stepDedupe','stepTransform','stepExport'];
+                ids.forEach((id, i) => {{
+                    const el = document.getElementById(id);
+                    el.classList.remove('active', 'done');
+                    if (done) el.classList.add('done');
+                    else if (i === 0) el.classList.add('active');
                 }});
                 if (done) document.getElementById('stepExport').classList.add('active');
             }}

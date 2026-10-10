@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from PyPDF2 import PdfReader
 from dotenv import load_dotenv
 
-from portfolio_ui import dashboard_page, demo_badge, UPLOAD_ICON_SVG, PDF_DOC_ICON
+from portfolio_ui import dashboard_page, demo_badge, UPLOAD_ICON_SVG, PDF_DOC_ICON, sparkline_svg
 
 # Load environment variables
 load_dotenv()
@@ -256,11 +256,11 @@ async def root():
 
     doc_icon = PDF_DOC_ICON
     body = f"""
-        <section class="pdf-kpi-strip" aria-label="Extraction metrics">
-            <div class="pdf-kpi"><div class="pdf-kpi-icon">{doc_icon}</div><div><label>PDF files</label><strong id="kpiFiles">3</strong></div></div>
-            <div class="pdf-kpi"><div class="pdf-kpi-icon">{doc_icon}</div><div><label>Fields extracted</label><strong id="kpiFields">21</strong></div></div>
-            <div class="pdf-kpi"><div class="pdf-kpi-icon">{doc_icon}</div><div><label>Mode</label><strong id="kpiMode">{mode_seed}</strong> <span class="pill {pill_seed}" id="kpiModePill">{mode_seed}</span></div></div>
-            <div class="pdf-kpi"><div class="pdf-kpi-icon">{doc_icon}</div><div><label>Avg confidence</label><strong id="kpiConf">68%</strong></div></div>
+        <section class="kpi-strip" aria-label="Extraction metrics">
+            <div class="kpi-card"><span class="kpi-label">PDF files</span><div class="kpi-row pdf-kpi-row"><span class="pdf-kpi-icon">{doc_icon}</span><span class="kpi-value" id="kpiFiles">3</span></div></div>
+            <div class="kpi-card"><span class="kpi-label">Fields extracted</span><div class="kpi-row"><span class="kpi-value" id="kpiFields">21</span>{sparkline_svg()}</div></div>
+            <div class="kpi-card"><span class="kpi-label">Mode</span><div class="kpi-row"><span class="kpi-value" id="kpiMode" style="font-size:1rem">{mode_seed}</span><span class="pill {pill_seed}" id="kpiModePill">{mode_seed}</span></div></div>
+            <div class="kpi-card"><span class="kpi-label">Avg confidence</span><div class="kpi-row"><span class="kpi-value" id="kpiConf">68%</span>{sparkline_svg("2,12 7,8 12,9 18,6 24,7 28,5")}</div></div>
         </section>
 
         <div class="pdf-layout">
@@ -320,7 +320,7 @@ async def root():
             const defaultMode = '{mode_seed}';
 
             function confBar(pct) {{
-                return `<div class="progress-bar" title="${{pct}}%"><span style="width:${{pct}}%"></span></div>`;
+                return `<div class="progress-bar progress-bar--doc" title="${{pct}}%"><span style="width:${{pct}}%"></span></div>`;
             }}
 
             function rowHtml(c) {{
