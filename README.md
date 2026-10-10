@@ -11,9 +11,9 @@
 
 | Project | Description | Live Demo |
 |---------|-------------|-----------|
-| **Excel Automation** | Clean/dedupe/transform spreadsheet data | **[Try it →](LIVE_DEMO_URL_EXCEL)** |
-| **PDF Document AI** | Extract contract data from PDFs | **[Try it →](LIVE_DEMO_URL_PDF)** |
-| **OpenAI API Automation** | Inquiry processing with AI categorization | **[Try it →](LIVE_DEMO_URL_API)** |
+| **Excel Automation** | Clean/dedupe/transform spreadsheet data | **[Try it →](https://leane-excel-automation.vercel.app)** |
+| **PDF Document AI** | Extract contract data from PDFs | **[Try it →](https://leane-pdf-document-ai.vercel.app)** |
+| **OpenAI API Automation** | Inquiry processing with AI categorization | **[Try it →](https://leane-openai-api-automation.vercel.app)** |
 
 ---
 
