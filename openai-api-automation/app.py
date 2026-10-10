@@ -307,14 +307,16 @@ async def root():
 
     badge = demo_badge(mock_ai=not OPENAI_AVAILABLE, openai_active=OPENAI_AVAILABLE)
 
-    body = """
+    kpi_section = f"""
         <section class="kpi-strip" aria-label="Queue status">
             <div class="kpi-card"><span class="kpi-label">Open today</span><div class="kpi-row"><span class="kpi-value" id="kpiOpen">24</span>{sparkline_svg()}</div></div>
             <div class="kpi-card"><span class="kpi-label">Auto-resolved</span><div class="kpi-row"><span class="kpi-value" id="kpiResolved">18</span>{sparkline_svg("2,11 8,8 14,6 20,7 26,4")}</div></div>
             <div class="kpi-card"><span class="kpi-label">Avg confidence</span><div class="kpi-row"><span class="kpi-value" id="kpiConf">68%</span>{sparkline_svg("2,10 9,7 15,8 21,5 27,6")}</div></div>
             <div class="kpi-card"><span class="kpi-label">Queue</span><div class="kpi-row"><span class="kpi-value" id="kpiQueue" style="font-size:1rem">Medium</span><span class="pill pill-neutral">Active</span></div></div>
         </section>
+    """
 
+    body = kpi_section + """
         <div class="inquiry-layout">
             <section class="panel">
                 <div class="panel-head">
