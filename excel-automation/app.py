@@ -13,7 +13,7 @@ from pathlib import Path
 import pandas as pd
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
-from portfolio_ui import dashboard_page, demo_badge, UPLOAD_ICON_SVG, sparkline_svg
+from portfolio_ui import dashboard_page, demo_badge, UPLOAD_ICON_SVG
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -158,59 +158,64 @@ def _duplicates_removed(report: dict) -> int:
 @app.get("/", response_class=HTMLResponse)
 async def root():
     """Serve the web UI"""
-    spark = sparkline_svg()
     body = f"""
-        <section class="kpi-strip" aria-label="Pipeline metrics">
-            <div class="kpi-card"><span class="kpi-label">Total rows</span><div class="kpi-row"><span class="kpi-value" id="kpiTotal">10,248</span>{spark}</div></div>
-            <div class="kpi-card"><span class="kpi-label">Cleaned</span><div class="kpi-row"><span class="kpi-value" id="kpiCleaned">9,892</span>{sparkline_svg("2,10 8,7 14,8 20,5 26,6")}</div></div>
-            <div class="kpi-card"><span class="kpi-label">Duplicates removed</span><div class="kpi-row"><span class="kpi-value" id="kpiDupes">312</span>{sparkline_svg("2,12 9,9 16,10 22,4 26,5")}</div></div>
-            <div class="kpi-card"><span class="kpi-label">Columns</span><div class="kpi-row"><span class="kpi-value" id="kpiCols">12</span><div class="bar-chart" aria-hidden="true"><span style="height:40%"></span><span style="height:70%"></span><span style="height:55%"></span><span style="height:90%"></span><span style="height:65%"></span></div></div></div>
-        </section>
+        <nav class="pipeline-stepper" aria-label="Pipeline">
+            <span class="step active" id="stepClean">Clean</span><span class="chev">›</span>
+            <span class="step" id="stepDedupe">Dedupe</span><span class="chev">›</span>
+            <span class="step" id="stepTransform">Transform</span><span class="chev">›</span>
+            <span class="step" id="stepExport">Export</span>
+        </nav>
 
-        <div class="dashboard-grid">
-            <section class="panel" aria-label="Controls">
-                <div class="panel-head"><span class="panel-title">Import & rules</span><span class="panel-meta">Max 10MB</span></div>
-                <div class="panel-body">
-                    <form id="uploadForm" enctype="multipart/form-data">
-                        <div class="upload-zone" id="uploadZone">
-                            {UPLOAD_ICON_SVG}
-                            <p class="upload-title">Drop Excel or CSV</p>
-                            <p class="upload-hint">or browse a single workbook</p>
-                            <label class="btn-file"><input type="file" name="file" id="fileInput" accept=".xlsx,.xls,.csv">Browse files</label>
-                            <div class="file-chips" id="fileChips" aria-live="polite"></div>
-                        </div>
-                        <label class="field-label" for="rulesInput">Processing rules (JSON)</label>
-                        <textarea id="rulesInput" name="rules" placeholder='{{"dedupe_columns":["email"]}}'></textarea>
-                        <div class="actions">
-                            <button type="submit" class="btn btn-primary" id="submitBtn">Run pipeline</button>
-                            <button type="button" class="btn btn-secondary" id="sampleBtn">Load sample</button>
-                        </div>
-                        <button type="button" class="btn btn-tertiary" id="resetPreviewBtn">Reset preview</button>
-                    </form>
-                </div>
-            </section>
+        <div class="excel-status-bar" aria-label="Workbook status">
+            <div class="stat"><label>Total rows</label><strong id="kpiTotal">10,248</strong></div>
+            <div class="stat"><label>Cleaned</label><strong id="kpiCleaned">9,892</strong></div>
+            <div class="stat"><label>Duplicates removed</label><strong id="kpiDupes">312</strong></div>
+            <div class="stat"><label>Columns</label><strong id="kpiCols">12</strong></div>
+        </div>
 
-            <section class="panel" id="previewPanel" aria-label="Live preview">
+        <div class="excel-layout">
+            <section class="panel sheet-panel" id="previewPanel" aria-label="Workbook preview">
                 <div class="panel-head">
-                    <div class="preview-status">
-                        <span class="panel-title">Output preview</span>
-                        <span class="pill pill-warning" id="previewPill">Sample</span>
-                    </div>
-                    <span class="panel-meta" id="previewMeta">Showing illustrative rows</span>
+                    <span class="panel-title">Workbook preview</span>
+                    <span class="pill pill-warning" id="previewPill">Sample sheet</span>
                 </div>
-                <div class="panel-body flush panel-loading" id="previewBody">
+                <p class="panel-meta" style="padding:0 14px 8px;font-size:0.75rem" id="previewMeta">Illustrative cleaned rows</p>
+                <div id="colChips" class="col-chips" style="padding:0 14px 10px"></div>
+                <div class="panel-body flush">
                     <div class="table-wrap">
-                        <table class="data-table" id="previewTable">
+                        <table class="data-table sheet-grid">
                             <thead id="previewHead"></thead>
                             <tbody id="previewBodyRows"></tbody>
                         </table>
                     </div>
                 </div>
                 <div class="download-bar" id="downloadBar" hidden>
-                    <a href="#" class="download-link" id="dlExcel" download>Export Excel</a>
-                    <a href="#" class="download-link" id="dlReport" download>Processing report</a>
+                    <a href="#" class="download-link" id="dlExcel" download>Export .xlsx</a>
+                    <a href="#" class="download-link" id="dlReport" download>Run report</a>
                 </div>
                 <div id="errorToast" class="toast-error" hidden></div>
+            </section>
+
+            <section class="panel" aria-label="Import and rules">
+                <div class="panel-head"><span class="panel-title">Import &amp; rules</span><span class="panel-meta">10MB max</span></div>
+                <div class="panel-body">
+                    <form id="uploadForm" enctype="multipart/form-data">
+                        <div class="upload-zone" id="uploadZone">
+                            {UPLOAD_ICON_SVG}
+                            <p class="upload-title">Drop spreadsheet</p>
+                            <p class="upload-hint">.xlsx, .xls, or .csv</p>
+                            <label class="btn-file"><input type="file" name="file" id="fileInput" accept=".xlsx,.xls,.csv">Browse</label>
+                            <div class="file-chips" id="fileChips"></div>
+                        </div>
+                        <label class="field-label" for="rulesInput">Rules JSON</label>
+                        <textarea id="rulesInput" name="rules" placeholder='{{"dedupe_columns":["email"]}}'></textarea>
+                        <div class="actions">
+                            <button type="submit" class="btn btn-primary" id="submitBtn">Run pipeline</button>
+                            <button type="button" class="btn btn-secondary" id="sampleBtn">Load sample</button>
+                        </div>
+                        <button type="button" class="btn btn-tertiary" id="resetPreviewBtn">Reset sheet</button>
+                    </form>
+                </div>
             </section>
         </div>
 
@@ -236,12 +241,26 @@ async def root():
             const downloadBar = document.getElementById('downloadBar');
             const errorToast = document.getElementById('errorToast');
 
+            const COL_TYPES = {{ email: 'text', name: 'text', customer_id: 'id', region: 'enum', status: 'status', age: 'num' }};
+
             function renderTable(columns, rows) {{
                 document.getElementById('previewHead').innerHTML =
                     '<tr>' + columns.map(c => `<th>${{c}}</th>`).join('') + '</tr>';
-                document.getElementById('previewBodyRows').innerHTML = rows.map(row =>
-                    '<tr>' + columns.map(c => `<td>${{row[c] ?? ''}}</td>`).join('') + '</tr>'
+                document.getElementById('colChips').innerHTML = columns.map(c =>
+                    `<span class="col-chip">${{COL_TYPES[c] || 'text'}} · ${{c}}</span>`
                 ).join('');
+                document.getElementById('previewBodyRows').innerHTML = rows.map(row => {{
+                    const cleaned = String(row.status || '').toLowerCase().includes('active');
+                    return '<tr class="' + (cleaned ? 'row-cleaned' : '') + '">' +
+                        columns.map(c => `<td>${{row[c] ?? ''}}</td>`).join('') + '</tr>';
+                }}).join('');
+            }}
+
+            function setStepper(done) {{
+                ['stepClean','stepDedupe','stepTransform','stepExport'].forEach((id, i) => {{
+                    document.getElementById(id).classList.toggle('active', done || i === 0);
+                }});
+                if (done) document.getElementById('stepExport').classList.add('active');
             }}
 
             function setKpis(total, cleaned, dupes, cols) {{
@@ -274,11 +293,12 @@ async def root():
                 if (data.preview) renderTable(data.preview.columns, data.preview.rows);
                 previewPill.className = 'pill pill-success';
                 previewPill.textContent = 'Success';
-                previewMeta.textContent = `Processed in ${{data.processing_time.toFixed(2)}}s · ${{report.final_rows}} rows export-ready`;
+                previewMeta.textContent = `Processed in ${{data.processing_time.toFixed(2)}}s · ${{report.final_rows}} rows ready`;
                 document.getElementById('dlExcel').href = '/download/' + data.output_file;
                 document.getElementById('dlReport').href = '/download/' + data.report_file;
                 downloadBar.hidden = false;
                 errorToast.hidden = true;
+                setStepper(true);
             }}
 
             fileInput.addEventListener('change', () => {{
@@ -333,8 +353,9 @@ async def root():
         page_title="Excel Data Processing — Leane",
         product_name="Excel Data Processing",
         badge_text=demo_badge(sample_only=True),
-        subtitle="Clean, dedupe, and transform spreadsheet data with configurable rules and export-ready output.",
+        subtitle="Spreadsheet workbench — clean, dedupe, transform, and export with a live sheet preview.",
         body_html=body,
+        theme="excel",
     )
 
 

@@ -19,7 +19,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 
-from portfolio_ui import dashboard_page, demo_badge, sparkline_svg
+from portfolio_ui import dashboard_page, demo_badge
 
 # Load environment
 load_dotenv()
@@ -306,180 +306,171 @@ async def root():
         )
 
     badge = demo_badge(mock_ai=not OPENAI_AVAILABLE, openai_active=OPENAI_AVAILABLE)
-    spark = sparkline_svg()
 
-    body = f"""
-        <section class="kpi-strip" aria-label="Queue metrics">
-            <div class="kpi-card"><span class="kpi-label">Open today</span><div class="kpi-row"><span class="kpi-value" id="kpiOpen">24</span>{spark}</div></div>
-            <div class="kpi-card"><span class="kpi-label">Auto-resolved</span><div class="kpi-row"><span class="kpi-value" id="kpiResolved">18</span>{sparkline_svg("2,11 8,8 14,6 20,7 26,4")}</div></div>
-            <div class="kpi-card"><span class="kpi-label">Avg confidence</span><div class="kpi-row"><span class="kpi-value" id="kpiConf">68%</span>{sparkline_svg("2,10 9,7 15,8 21,5 27,6")}</div></div>
-            <div class="kpi-card"><span class="kpi-label">Queue</span><div class="kpi-row"><span class="kpi-value" id="kpiQueue" style="font-size:1rem">Medium</span><span class="pill pill-warning">Active</span></div></div>
-        </section>
+    body = """
+        <div class="queue-status-bar" aria-label="Queue status">
+            <span>Open today<strong id="kpiOpen">24</strong></span>
+            <span>Auto-resolved<strong id="kpiResolved">18</strong></span>
+            <span>Confidence<strong id="kpiConf">68%</strong></span>
+            <span>Queue<strong id="kpiQueue">Medium</strong></span>
+        </div>
 
-        <div class="dashboard-grid">
+        <div class="inquiry-layout">
             <section class="panel">
-                <div class="panel-head"><span class="panel-title">New inquiry</span><span class="panel-meta">Min 10 chars</span></div>
-                <div class="panel-body">
+                <div class="panel-head">
+                    <span class="panel-title">Inbox</span>
+                    <button type="button" class="btn btn-secondary" id="sampleBtn" style="padding:5px 10px;font-size:0.75rem">Sample</button>
+                </div>
+                <ul class="ticket-list" id="ticketList"></ul>
+                <div class="panel-body compose-box">
                     <form id="inquiryForm">
-                        <label class="field-label" for="inquiryText">Message</label>
-                        <textarea id="inquiryText" placeholder="Describe the issue or question..." minlength="10" required></textarea>
-                        <label class="field-label" for="userName">Name</label>
-                        <input type="text" id="userName" placeholder="Optional" autocomplete="name">
-                        <label class="field-label" for="userEmail">Email</label>
-                        <input type="email" id="userEmail" placeholder="Optional" autocomplete="email">
+                        <label class="field-label" for="inquiryText">New ticket</label>
+                        <textarea id="inquiryText" placeholder="Customer message..." minlength="10" required></textarea>
+                        <input type="text" id="userName" placeholder="Name (optional)" style="margin-top:8px">
+                        <input type="email" id="userEmail" placeholder="Email (optional)" style="margin-top:8px">
                         <div class="actions">
-                            <button type="submit" class="btn btn-primary" id="submitBtn">Analyze &amp; respond</button>
-                            <button type="button" class="btn btn-secondary" id="sampleBtn">Load sample</button>
+                            <button type="submit" class="btn btn-primary" id="submitBtn">Send to triage</button>
                         </div>
-                        <a class="btn btn-tertiary" href="/stats" target="_blank" rel="noopener">Raw JSON log</a>
+                        <a class="btn btn-tertiary" href="/stats" target="_blank" rel="noopener">JSON log</a>
                     </form>
                 </div>
             </section>
 
             <section class="panel" id="resultPanel">
                 <div class="panel-head">
-                    <div class="preview-status">
-                        <span class="panel-title">Triage &amp; draft reply</span>
-                        <span class="pill pill-warning" id="resultPill">Preview</span>
-                    </div>
-                    <span class="panel-meta" id="resultMeta">Sample classification</span>
+                    <span class="panel-title">Ticket detail</span>
+                    <span class="pill pill-warning" id="resultPill">Preview</span>
                 </div>
-                <div class="result-card" id="resultCard"></div>
-                <div class="panel-head" style="border-top:1px solid var(--border-subtle)">
-                    <span class="panel-title">Recent inquiries</span>
-                    <span class="panel-meta" id="recentMeta">Last 5</span>
-                </div>
-                <div class="panel-body flush">
-                    <div class="table-wrap">
-                        <table class="data-table">
-                            <thead><tr><th>ID</th><th>Category</th><th>Priority</th><th>Snippet</th></tr></thead>
-                            <tbody id="recentRows"></tbody>
-                        </table>
-                    </div>
+                <div class="panel-body">
+                    <p class="panel-meta" id="resultMeta" style="margin-bottom:10px">Select a ticket or submit a new one</p>
+                    <div class="triage-header" id="triageTags"></div>
+                    <div class="reply-bubble" id="replyBubble"></div>
+                    <p class="panel-meta" style="margin-top:12px" id="methodLine"></p>
                 </div>
                 <div class="toast-error" id="errorToast" hidden></div>
             </section>
         </div>
 
         <script>
-        (function() {{
-            const SEED_RESULT = {{
-                id: 1042,
-                category: 'sales',
-                priority: 'high',
-                sentiment: 'positive',
-                ai_response: 'Thank you for your interest in our Enterprise plan. Our team will follow up with pricing and security documentation within one business day.',
-                confidence_score: 0.68,
-                processing_method: 'mock_heuristic'
-            }};
-            const SEED_RECENT = [
-                {{ id: 1039, category: 'billing', priority: 'medium', text: 'Question about invoice #8821...' }},
-                {{ id: 1040, category: 'technical', priority: 'high', text: 'API integration returns 502...' }},
-                {{ id: 1041, category: 'support', priority: 'low', text: 'How do I reset workspace roles?' }},
+        (function() {
+            const SEED_TICKETS = [
+                { id: 1042, category: 'sales', priority: 'high', text: 'Enterprise plan pricing for 50 seats...', ai_response: 'Thank you for your interest in our Enterprise plan. Our team will follow up with pricing and security documentation within one business day.', confidence_score: 0.68, processing_method: 'mock_heuristic', sentiment: 'positive' },
+                { id: 1039, category: 'billing', priority: 'medium', text: 'Question about invoice #8821...', ai_response: 'We are reviewing invoice #8821 and will confirm line items within 24 hours.', confidence_score: 0.62, processing_method: 'mock_heuristic', sentiment: 'neutral' },
+                { id: 1040, category: 'technical', priority: 'high', text: 'API integration returns 502...', ai_response: 'Engineering has been notified and will investigate the 502 errors on your integration.', confidence_score: 0.71, processing_method: 'mock_heuristic', sentiment: 'negative' },
             ];
+            let tickets = [...SEED_TICKETS];
+            let selectedId = 1042;
 
-            function priorityPill(p) {{
-                const cls = p === 'urgent' || p === 'high' ? 'pill-warning' : (p === 'low' ? 'pill-mock' : 'pill-neutral');
-                return `<span class="pill ${{cls}}">${{p}}</span>`;
-            }}
+            function catTag(c) { return `<span class="tag tag-${c}">${c}</span>`; }
+            function priTag(p) { return `<span class="tag priority-${p}">${p}</span>`; }
 
-            function renderResult(data) {{
-                document.getElementById('resultCard').innerHTML = `
-                    <div class="result-grid">
-                        <div class="result-kv"><label>Inquiry</label><span>#${{data.id}}</span></div>
-                        <div class="result-kv"><label>Category</label><span>${{data.category}}</span></div>
-                        <div class="result-kv"><label>Priority</label><span>${{priorityPill(data.priority)}}</span></div>
-                        <div class="result-kv"><label>Sentiment</label><span>${{data.sentiment}}</span></div>
-                        <div class="result-kv"><label>Confidence</label><span>${{Math.round((data.confidence_score||0)*100)}}%</span></div>
-                        <div class="result-kv"><label>Method</label><span class="pill pill-mock">${{data.processing_method}}</span></div>
-                    </div>
-                    <label class="field-label">Drafted reply</label>
-                    <div class="reply-block">${{data.ai_response}}</div>`;
-                document.getElementById('kpiConf').textContent = Math.round((data.confidence_score||0)*100) + '%';
-            }}
+            function renderDetail(t) {
+                if (!t) return;
+                document.getElementById('triageTags').innerHTML =
+                    `<span class="tid">#${t.id}</span> ${catTag(t.category)} ${priTag(t.priority)} <span class="pill pill-mock">${t.sentiment}</span>`;
+                document.getElementById('replyBubble').textContent = t.ai_response || 'No draft yet.';
+                document.getElementById('methodLine').textContent = t.processing_method ? `Method: ${t.processing_method} · ${Math.round((t.confidence_score||0)*100)}% confidence` : '';
+                document.getElementById('kpiConf').textContent = Math.round((t.confidence_score||0.68)*100) + '%';
+            }
 
-            function renderRecent(list) {{
-                document.getElementById('recentRows').innerHTML = list.map(r => `
-                    <tr>
-                        <td>#${{r.id}}</td>
-                        <td>${{r.category}}</td>
-                        <td>${{priorityPill(r.priority)}}</td>
-                        <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis">${{r.text}}</td>
-                    </tr>`).join('');
-            }}
+            function renderQueue() {
+                document.getElementById('ticketList').innerHTML = tickets.map(t => `
+                    <li class="ticket-item ${t.id===selectedId?'selected':''}" data-id="${t.id}">
+                        <div class="row1"><span class="tid">#${t.id}</span>${priTag(t.priority)}</div>
+                        <div class="snippet">${catTag(t.category)} ${t.text}</div>
+                    </li>`).join('');
+                document.querySelectorAll('.ticket-item').forEach(el => {
+                    el.addEventListener('click', () => {
+                        selectedId = Number(el.dataset.id);
+                        const ticket = tickets.find(x => x.id === selectedId);
+                        renderQueue();
+                        renderDetail(ticket);
+                        document.getElementById('resultPill').className = 'pill pill-neutral';
+                        document.getElementById('resultPill').textContent = 'Open';
+                    });
+                });
+            }
 
-            function showSeed() {{
-                renderResult(SEED_RESULT);
-                renderRecent(SEED_RECENT);
-                document.getElementById('resultPill').className = 'pill pill-warning';
-                document.getElementById('resultPill').textContent = 'Preview';
-                document.getElementById('resultMeta').textContent = 'Illustrative triage — submit or load sample';
-            }}
+            function upsertTicket(data, snippet) {
+                const t = { ...data, text: snippet || data.ai_response?.slice(0,48) + '...' };
+                const idx = tickets.findIndex(x => x.id === data.id);
+                if (idx >= 0) tickets[idx] = { ...tickets[idx], ...t };
+                else tickets.unshift(t);
+                selectedId = data.id;
+                renderQueue();
+                renderDetail(tickets.find(x => x.id === selectedId));
+            }
 
-            async function refreshStats() {{
-                try {{
+            async function refreshStats() {
+                try {
                     const res = await fetch('/stats');
                     if (!res.ok) return;
                     const stats = await res.json();
-                    document.getElementById('kpiOpen').textContent = stats.total_inquiries || 0;
-                    const recent = (stats.recent_inquiries || []).slice(0, 5);
-                    if (recent.length) {{
-                        renderRecent(recent.map(r => ({{
+                    document.getElementById('kpiOpen').textContent = stats.total_inquiries || tickets.length;
+                    const recent = stats.recent_inquiries || [];
+                    if (recent.length) {
+                        tickets = recent.slice(0, 8).map(r => ({
                             id: r.id,
                             category: r.category,
                             priority: r.priority,
-                            text: r.text
-                        }})));
-                        document.getElementById('recentMeta').textContent = 'From database';
-                    }}
-                }} catch (_) {{}}
-            }}
+                            text: r.text,
+                            ai_response: '(Load ticket to generate reply)',
+                            confidence_score: 0.65,
+                            processing_method: 'stored',
+                            sentiment: 'neutral'
+                        }));
+                        selectedId = tickets[0].id;
+                        renderQueue();
+                        renderDetail(tickets[0]);
+                    }
+                } catch (_) {}
+            }
 
-            async function run(url, options, resetForm) {{
+            async function run(url, options, resetForm, snippet) {
                 const panel = document.getElementById('resultPanel');
                 panel.classList.add('panel-loading');
                 document.getElementById('submitBtn').disabled = true;
-                document.getElementById('sampleBtn').disabled = true;
-                try {{
+                try {
                     const res = await fetch(url, options);
                     const data = await res.json();
                     if (!res.ok) throw new Error(data.detail || 'Request failed');
-                    renderResult(data);
+                    upsertTicket(data, snippet);
                     document.getElementById('resultPill').className = 'pill pill-success';
                     document.getElementById('resultPill').textContent = 'Processed';
-                    document.getElementById('resultMeta').textContent = 'Stored with notification stubs';
+                    document.getElementById('resultMeta').textContent = 'Draft saved · notification stubs fired';
                     document.getElementById('errorToast').hidden = true;
                     if (resetForm) document.getElementById('inquiryForm').reset();
                     await refreshStats();
-                }} catch (e) {{
-                    const t = document.getElementById('errorToast');
-                    t.textContent = e.message;
-                    t.hidden = false;
-                }} finally {{
+                } catch (e) {
+                    document.getElementById('errorToast').textContent = e.message;
+                    document.getElementById('errorToast').hidden = false;
+                } finally {
                     panel.classList.remove('panel-loading');
                     document.getElementById('submitBtn').disabled = false;
-                    document.getElementById('sampleBtn').disabled = false;
-                }}
-            }}
+                }
+            }
 
-            document.getElementById('inquiryForm').addEventListener('submit', e => {{
+            document.getElementById('inquiryForm').addEventListener('submit', e => {
                 e.preventDefault();
                 const text = document.getElementById('inquiryText').value.trim();
-                if (text.length < 10) {{ alert('Enter at least 10 characters.'); return; }}
-                run('/submit', {{
+                if (text.length < 10) { alert('Enter at least 10 characters.'); return; }
+                run('/submit', {
                     method: 'POST',
-                    headers: {{'Content-Type': 'application/json'}},
-                    body: JSON.stringify({{
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
                         inquiry_text: text,
                         user_name: document.getElementById('userName').value || null,
                         user_email: document.getElementById('userEmail').value || null
-                    }})
-                }}, true);
-            }});
-            document.getElementById('sampleBtn').addEventListener('click', () => run('/sample', {{}}, false));
-            showSeed();
+                    })
+                }, true, text.slice(0, 60) + (text.length > 60 ? '...' : ''));
+            });
+            document.getElementById('sampleBtn').addEventListener('click', () => run('/sample', {}, false, 'Enterprise plan inquiry...'));
+
+            renderQueue();
+            renderDetail(tickets.find(t => t.id === selectedId));
+            document.getElementById('resultMeta').textContent = 'Sample queue — click a ticket';
             refreshStats();
-        }})();
+        })();
         </script>
     """
 
@@ -487,9 +478,10 @@ async def root():
         page_title="Inquiry Automation — Leane",
         product_name="Inquiry Automation",
         badge_text=badge,
-        subtitle="Classify inbound messages, assign priority, and draft responses with optional Telegram and email stubs.",
+        subtitle="Support triage desk — queue tickets, classify priority, and draft replies in one view.",
         notice_html=notice,
         body_html=body,
+        theme="inquiry",
     )
 
 

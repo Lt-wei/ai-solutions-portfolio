@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from PyPDF2 import PdfReader
 from dotenv import load_dotenv
 
-from portfolio_ui import dashboard_page, demo_badge, UPLOAD_ICON_SVG, sparkline_svg
+from portfolio_ui import dashboard_page, demo_badge, UPLOAD_ICON_SVG, PDF_DOC_ICON
 
 # Load environment variables
 load_dotenv()
@@ -254,29 +254,31 @@ async def root():
     mode_seed = "AI" if OPENAI_AVAILABLE else "Mock"
     pill_seed = "pill-neutral" if OPENAI_AVAILABLE else "pill-mock"
 
+    doc_icon = PDF_DOC_ICON
     body = f"""
-        <section class="kpi-strip" aria-label="Extraction metrics">
-            <div class="kpi-card"><span class="kpi-label">PDF files</span><div class="kpi-row"><span class="kpi-value" id="kpiFiles">3</span>{sparkline_svg()}</div></div>
-            <div class="kpi-card"><span class="kpi-label">Fields extracted</span><div class="kpi-row"><span class="kpi-value" id="kpiFields">21</span>{sparkline_svg("2,9 8,11 14,7 20,8 26,4")}</div></div>
-            <div class="kpi-card"><span class="kpi-label">Mode</span><div class="kpi-row"><span class="kpi-value" id="kpiMode" style="font-size:1rem">{mode_seed}</span><span class="pill {pill_seed}" id="kpiModePill">{mode_seed}</span></div></div>
-            <div class="kpi-card"><span class="kpi-label">Avg confidence</span><div class="kpi-row"><span class="kpi-value" id="kpiConf">68%</span>{sparkline_svg("2,12 7,8 12,9 18,6 24,7 28,5")}</div></div>
+        <section class="pdf-kpi-strip" aria-label="Extraction metrics">
+            <div class="pdf-kpi"><div class="pdf-kpi-icon">{doc_icon}</div><div><label>PDF files</label><strong id="kpiFiles">3</strong></div></div>
+            <div class="pdf-kpi"><div class="pdf-kpi-icon">{doc_icon}</div><div><label>Fields extracted</label><strong id="kpiFields">21</strong></div></div>
+            <div class="pdf-kpi"><div class="pdf-kpi-icon">{doc_icon}</div><div><label>Mode</label><strong id="kpiMode">{mode_seed}</strong> <span class="pill {pill_seed}" id="kpiModePill">{mode_seed}</span></div></div>
+            <div class="pdf-kpi"><div class="pdf-kpi-icon">{doc_icon}</div><div><label>Avg confidence</label><strong id="kpiConf">68%</strong></div></div>
         </section>
 
-        <div class="dashboard-grid">
+        <div class="pdf-layout">
             <section class="panel">
-                <div class="panel-head"><span class="panel-title">Document intake</span><span class="panel-meta">Batch PDF</span></div>
+                <div class="panel-head"><span class="panel-title">Document stack</span><span class="panel-meta" id="stackMeta">3 contracts</span></div>
                 <div class="panel-body">
-                    <form id="uploadForm" enctype="multipart/form-data">
+                    <div class="doc-stack" id="docStack"></div>
+                    <form id="uploadForm" enctype="multipart/form-data" style="margin-top:14px">
                         <div class="upload-zone" id="uploadZone">
                             {UPLOAD_ICON_SVG}
-                            <p class="upload-title">Drop contract PDFs</p>
-                            <p class="upload-hint">Multiple files · 10MB each</p>
-                            <label class="btn-file"><input type="file" id="fileInput" name="files" accept=".pdf" multiple>Browse files</label>
+                            <p class="upload-title">Add PDFs</p>
+                            <p class="upload-hint">Batch upload · 10MB each</p>
+                            <label class="btn-file"><input type="file" id="fileInput" name="files" accept=".pdf" multiple>Browse</label>
                             <div class="file-chips" id="fileChips"></div>
                         </div>
                         <div class="actions">
-                            <button type="submit" class="btn btn-primary" id="submitBtn">Run extraction</button>
-                            <button type="button" class="btn btn-secondary" id="sampleBtn">Load sample PDFs</button>
+                            <button type="submit" class="btn btn-primary" id="submitBtn">Extract fields</button>
+                            <button type="button" class="btn btn-secondary" id="sampleBtn">Sample contracts</button>
                         </div>
                     </form>
                 </div>
@@ -284,19 +286,17 @@ async def root():
 
             <section class="panel" id="previewPanel">
                 <div class="panel-head">
-                    <div class="preview-status">
-                        <span class="panel-title">Structured fields</span>
-                        <span class="pill pill-warning" id="statusPill">Preview</span>
-                    </div>
-                    <span class="panel-meta" id="previewMeta">Sample contract rows</span>
+                    <span class="panel-title">Extracted fields</span>
+                    <span class="pill pill-warning" id="statusPill">Preview</span>
                 </div>
+                <p class="panel-meta" style="padding:8px 14px 0;font-size:0.75rem" id="previewMeta">Review parsed contract data</p>
                 <div class="panel-body flush">
                     <div class="table-wrap">
-                        <table class="data-table">
+                        <table class="data-table fields-table">
                             <thead>
                                 <tr>
-                                    <th>Contract</th><th>Company</th><th>Party A</th><th>Party B</th>
-                                    <th class="num">Amount</th><th>Date</th><th>Conf.</th>
+                                    <th>Contract</th><th>Company</th><th>Parties</th>
+                                    <th class="num">Amount</th><th>Date</th><th>Confidence</th>
                                 </tr>
                             </thead>
                             <tbody id="contractRows"></tbody>
@@ -304,7 +304,7 @@ async def root():
                     </div>
                 </div>
                 <div class="download-bar" id="downloadBar" hidden>
-                    <a class="download-link" id="dlExcel" href="#" download>Download Excel export</a>
+                    <a class="download-link" id="dlExcel" href="#" download>Export Excel</a>
                 </div>
                 <div class="toast-error" id="errorToast" hidden></div>
             </section>
@@ -319,14 +319,33 @@ async def root():
             ];
             const defaultMode = '{mode_seed}';
 
+            function confBar(pct) {{
+                return `<div class="progress-bar" title="${{pct}}%"><span style="width:${{pct}}%"></span></div>`;
+            }}
+
             function rowHtml(c) {{
+                const pct = Math.round((c.confidence||0)*100);
                 return `<tr>
-                    <td>${{c.contract_no}}</td><td>${{c.company}}</td><td>${{c.party_a}}</td><td>${{c.party_b}}</td>
+                    <td>${{c.contract_no}}</td><td>${{c.company}}</td>
+                    <td>${{c.party_a}} / ${{c.party_b}}</td>
                     <td class="num">$${{Number(c.amount).toLocaleString()}}</td><td>${{c.date}}</td>
-                    <td>${{Math.round((c.confidence||0)*100)}}%</td></tr>`;
+                    <td class="conf-cell">${{confBar(pct)}} <span style="font-size:0.7rem;color:var(--text-muted)">${{pct}}%</span></td></tr>`;
+            }}
+
+            function renderDocStack(list) {{
+                document.getElementById('docStack').innerHTML = list.map((c, i) => `
+                    <div class="doc-card ${{i===0?'active':''}}">
+                        <div class="doc-thumb"></div>
+                        <div class="doc-meta">
+                            <div class="name">${{c.contract_no}}</div>
+                            <div class="pages">${{c.company}} · p.1–3</div>
+                        </div>
+                    </div>`).join('');
+                document.getElementById('stackMeta').textContent = list.length + ' document' + (list.length===1?'':'s');
             }}
 
             function renderContracts(list) {{
+                renderDocStack(list);
                 document.getElementById('contractRows').innerHTML = list.map(rowHtml).join('');
             }}
 
@@ -418,9 +437,10 @@ async def root():
         page_title="PDF Document AI — Leane",
         product_name="PDF Document AI",
         badge_text=badge,
-        subtitle="Parse contract PDFs into structured fields with AI or heuristic fallback, then export to Excel.",
+        subtitle="Contract review pipeline — stack documents, extract fields, and export with confidence scoring.",
         notice_html=notice,
         body_html=body,
+        theme="pdf",
     )
 
 
